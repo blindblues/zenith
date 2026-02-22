@@ -18,6 +18,12 @@
 
 <body>
     <div id="app">
+        <!-- Mobile Menu Toggle -->
+        <button id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Menu">
+            <i data-lucide="menu"></i>
+        </button>
+        <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
         <!-- Sidebar -->
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
@@ -25,6 +31,9 @@
                     <div class="logo-icon"></div>
                     <h1>ZENITH</h1>
                 </div>
+                <button id="close-sidebar-btn" class="icon-btn close-sidebar-btn" aria-label="Chiudi menu">
+                    <i data-lucide="x"></i>
+                </button>
             </div>
 
             <div class="projects-section">

@@ -244,6 +244,11 @@ function selectProject(id) {
         renderProjects();
         syncTasks(id);
 
+        // Chiudi sidebar su mobile
+        if (window.innerWidth <= 768) {
+            closeSidebar();
+        }
+
         gsap.from('.column', {
             y: 20,
             opacity: 0,
@@ -494,13 +499,35 @@ saveTaskBtn.addEventListener('click', async () => {
     }
 });
 
+// Mobile Sidebar Toggle
+const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+const sidebarOverlay = document.getElementById('sidebar-overlay');
+const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+const sidebar = document.getElementById('sidebar');
+
+function openSidebar() {
+    sidebar.classList.add('open');
+    sidebarOverlay.classList.add('active');
+}
+
+function closeSidebar() {
+    sidebar.classList.remove('open');
+    sidebarOverlay.classList.remove('active');
+}
+
+mobileMenuBtn.addEventListener('click', openSidebar);
+sidebarOverlay.addEventListener('click', closeSidebar);
+closeSidebarBtn.addEventListener('click', closeSidebar);
+
 // App Initiation
 document.addEventListener('DOMContentLoaded', () => {
     setupSync();
     setupDragAndDrop();
     initIcons();
 
-    // Welcome Animation
-    gsap.from('.sidebar', { x: -50, opacity: 0, duration: 0.8, ease: 'power3.out' });
+    // Welcome Animation (solo desktop)
+    if (window.innerWidth > 768) {
+        gsap.from('.sidebar', { x: -50, opacity: 0, duration: 0.8, ease: 'power3.out' });
+    }
     gsap.from('.top-bar', { y: -20, opacity: 0, duration: 0.8, delay: 0.2, ease: 'power3.out' });
 });

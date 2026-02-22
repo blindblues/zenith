@@ -58,9 +58,7 @@ body {
     z-index: 10;
 }
 
-.sidebar-header {
-    margin-bottom: 3rem;
-}
+
 
 .logo {
     display: flex;
@@ -524,5 +522,188 @@ body {
     to {
         opacity: 1;
         transform: translateY(0);
+    }
+}
+
+/* Mobile Menu Button */
+.mobile-menu-btn {
+    display: none;
+    position: fixed;
+    top: 1.25rem;
+    left: 1.25rem;
+    z-index: 20;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    padding: 0.6rem;
+    cursor: pointer;
+    box-shadow: var(--shadow-md);
+    transition: background 0.2s;
+}
+
+.mobile-menu-btn:hover {
+    background: var(--primary-dark);
+}
+
+/* Sidebar Overlay */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(2px);
+    z-index: 9;
+}
+
+.sidebar-overlay.active {
+    display: block;
+}
+
+/* Close sidebar button - hidden on desktop */
+.close-sidebar-btn {
+    display: none;
+}
+
+.sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 3rem;
+}
+
+/* ===================== RESPONSIVE ===================== */
+
+/* Tablet (< 1024px) */
+@media (max-width: 1024px) {
+    .main-content {
+        padding: 1.5rem;
+    }
+
+    .kanban-board {
+        gap: 1rem;
+    }
+
+    #active-project-name {
+        font-size: 1.5rem;
+    }
+}
+
+/* Mobile (< 768px) */
+@media (max-width: 768px) {
+    body {
+        overflow: auto;
+    }
+
+    #app {
+        flex-direction: column;
+        height: auto;
+        min-height: 100vh;
+    }
+
+    /* Mobile hamburger menu */
+    .mobile-menu-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .close-sidebar-btn {
+        display: flex;
+    }
+
+    /* Sidebar diventa un drawer */
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: -300px;
+        height: 100vh;
+        width: 280px;
+        transition: left 0.3s ease;
+        box-shadow: none;
+        z-index: 50;
+    }
+
+    .sidebar.open {
+        left: 0;
+        box-shadow: var(--shadow-lg);
+    }
+
+    /* Top bar */
+    .top-bar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+        padding-top: 3.5rem;
+        /* Spazio per il pulsante hamburger */
+    }
+
+    .user-actions {
+        width: 100%;
+    }
+
+    .user-actions .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    #active-project-name {
+        font-size: 1.25rem;
+    }
+
+    .main-content {
+        padding: 1rem;
+    }
+
+    /* Kanban board: scroll orizzontale */
+    .kanban-board {
+        display: flex;
+        overflow-x: auto;
+        gap: 1rem;
+        padding-bottom: 1rem;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .column {
+        min-width: 280px;
+        flex-shrink: 0;
+        min-height: 300px;
+    }
+
+    /* Modal adattato */
+    .modal-content {
+        margin: 1rem;
+        max-width: calc(100vw - 2rem);
+    }
+
+    /* Touch: mostra sempre i pulsanti azione progetto */
+    .project-item-actions {
+        opacity: 1;
+    }
+
+    /* Touch: mostra sempre le azioni delle task */
+    .task-card:hover {
+        transform: none;
+    }
+}
+
+/* Small mobile (< 400px) */
+@media (max-width: 400px) {
+    .column {
+        min-width: 250px;
+    }
+
+    .top-bar {
+        padding-top: 4rem;
+    }
+
+    .project-priority {
+        width: 20px;
+        height: 20px;
+        font-size: 0.65rem;
     }
 }
