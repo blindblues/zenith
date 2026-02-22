@@ -988,15 +988,23 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         loginBtn.addEventListener('click', () => {
-            // Su mobile usa redirect perché i popup sono bloccati o causano problemi di sessione
-            // su iOS e browser mobile (Chrome/Safari).
-            const isMobile = window.innerWidth <= 768 || navigator.maxTouchPoints > 0 || /Mobi|Android/i.test(navigator.userAgent);
+            // Forza Google a mostrare sempre la selezione account per evitare loop di cache silenti
+            provider.setCustomParameters({
+                prompt: 'select_account'
+            });
 
-            if (isMobile) {
-                signInWithRedirect(auth, provider).catch(err => console.error("Redirect Login err:", err));
-            } else {
-                signInWithPopup(auth, provider).catch(err => console.error("Popup Login err:", err));
-            }
+            // Usiamo signInWithPopup ovunque, perché la redirect method su iOS soffre
+            // pesantemente le difese anti-tracciamento di Apple (ITP), bloccando il completamento del login.
+            signInWithPopup(auth, provider).catch(err => {
+                console.error("Popup Login err:", err);
+                if (err.code === 'auth/popup-blocked') {
+                    alert("⚠️ Popup bloccato dal browser!\n\nPer favore, consenti i popup per questo sito per effettuare l'accesso con Google (su iOS, disattiva temporaneamente il Blocco finestre a comparsa nelle Impostazioni di Safari), oppure riprova premendo nuovamente accedere.");
+                    // Tentativo di fallback in caso estremo
+                    signInWithRedirect(auth, provider);
+                } else {
+                    alert("Errore durante login: " + err.message);
+                }
+            });
         });
 
         logoutBtn.addEventListener('click', () => {
