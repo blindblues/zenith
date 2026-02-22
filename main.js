@@ -17,6 +17,7 @@ import {
     getAuth,
     signInWithPopup,
     signInWithRedirect,
+    getRedirectResult,
     GoogleAuthProvider,
     signOut,
     onAuthStateChanged
@@ -945,6 +946,13 @@ async function migrateLegacyProjects(userId) {
 // App Initiation / Auth
 document.addEventListener('DOMContentLoaded', () => {
     if (auth) {
+
+        // Verifica errori derivanti dal reindirizzamento
+        getRedirectResult(auth).catch(err => {
+            console.error("Redirect flow error:", err);
+            alert("Errore durante login: " + err.message + "\nSe usi Safari su iOS, disabilita l'opzione 'Impedisci monitoraggio cross-site' nelle impostazioni di Safari.");
+        });
+
         onAuthStateChanged(auth, async (user) => {
             if (user) {
                 state.currentUser = user;
