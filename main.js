@@ -1011,28 +1011,38 @@ async function migrateLegacyProjects(userId) {
 
 // App Initiation / Auth
 document.addEventListener('DOMContentLoaded', async () => {
+    const loadingScreen = document.getElementById('loading-screen');
+
     if (auth) {
-        // Mostra un piccolo indicatore di caricamento se possibile o nascondi tutto finché non sappiamo chi è l'utente
         console.log("Initializing Auth with Domain:", firebaseConfig.authDomain);
 
         try {
-            // Forza la persistenza locale (fondamentale per mobile)
             await setPersistence(auth, browserLocalPersistence);
-
             console.log("Checking for redirect result...");
-            const result = await getRedirectResult(auth);
+            const result = await getRedirectResult(auth).catch(e => {
+                console.error("Redirect Error caught:", e);
+                return null;
+            });
+
             if (result?.user) {
-                console.log("Redirect login success:", result.user.email);
+                console.log("Redirect success:", result.user.email);
                 state.currentUser = result.user;
             }
         } catch (err) {
-            console.error("Auth initialization error:", err);
-            // Non blocchiamo l'app per errori di persistenza minori
+            console.error("Auth init error:", err);
         }
 
         // Monitoraggio stato utente
         onAuthStateChanged(auth, async (user) => {
             console.log("Auth state changed. User:", user ? user.email : "null");
+
+            // Nascondi sempre il loader dopo la prima risposta dell'auth
+            if (loadingScreen) {
+                setTimeout(() => {
+                    loadingScreen.style.opacity = '0';
+                    setTimeout(() => loadingScreen.style.display = 'none', 300);
+                }, 500);
+            }
 
             if (user) {
                 state.currentUser = user;
