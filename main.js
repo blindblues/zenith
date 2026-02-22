@@ -943,39 +943,40 @@ async function migrateLegacyProjects(userId) {
 }
 
 // App Initiation / Auth
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     if (auth) {
+        console.log("Checking for redirect result...");
         // Gestisci il completamento del login (fondamentale per dopo il redirect)
-        getRedirectResult(auth)
-            .then((result) => {
-                if (result?.user) {
-                    console.log("Redirect login success:", result.user.email);
-                }
-            })
-            .catch(err => {
-                console.error("Auth redirect error:", err);
+        try {
+            const result = await getRedirectResult(auth);
+            if (result?.user) {
+                console.log("Redirect login success:", result.user.email);
+            }
+        } catch (err) {
+            console.error("Auth redirect error:", err);
+            if (err.code !== 'auth/web-storage-unsupported') {
                 alert("Errore accesso (Redirect): " + err.message);
-            });
+            }
+        }
 
         // Monitoraggio stato utente
         onAuthStateChanged(auth, async (user) => {
-            console.log("Auth state changed, user:", user ? user.email : "null");
+            console.log("Auth state changed. User:", user ? user.email : "null");
 
             if (user) {
                 state.currentUser = user;
 
-                // Aggiorna UI Profilo
+                // Aggiorna UI Profilo e stato App
                 userName.innerText = user.displayName || user.email;
                 if (user.photoURL) {
                     userAvatar.src = user.photoURL;
                     userAvatar.style.display = 'block';
                 }
 
-                // Nascondi login, mostra app
                 authScreen.style.display = 'none';
                 appScreen.style.display = 'flex';
 
-                // Migra e sincronizza
+                // Migra progetti legacy e carica dati
                 await migrateLegacyProjects(user.uid);
                 setupSync();
                 setupDragAndDrop();
@@ -996,24 +997,31 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Pulsante Login
-        loginBtn.addEventListener('click', () => {
-            // Su mobile (specialmente iOS) signInWithRedirect è molto più affidabile perché evita il blocco popup
+        // Pulsante Login - Approccio Robusto
+        loginBtn.addEventListener('click', async () => {
+            console.log("Login button clicked");
+            // Su mobile è categorico usare Redirect per evitare blocchi o perdite di sessione
             const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
             if (isMobile) {
-                signInWithRedirect(auth, provider).catch(err => {
-                    alert("Errore avvio redirect: " + err.message);
-                });
+                console.log("Starting redirect login (Mobile)...");
+                try {
+                    await signInWithRedirect(auth, provider);
+                } catch (err) {
+                    alert("Errore avvio login: " + err.message);
+                }
             } else {
-                signInWithPopup(auth, provider).catch(err => {
-                    console.error("Popup error:", err);
+                console.log("Starting popup login (Desktop)...");
+                try {
+                    await signInWithPopup(auth, provider);
+                } catch (err) {
+                    console.warn("Popup blocked or failed, falling back to redirect:", err.code);
                     if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request') {
-                        signInWithRedirect(auth, provider);
+                        await signInWithRedirect(auth, provider);
                     } else {
                         alert("Errore login: " + err.message);
                     }
-                });
+                }
             }
         });
 
