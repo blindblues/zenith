@@ -20,7 +20,9 @@ import {
     getRedirectResult,
     GoogleAuthProvider,
     signOut,
-    onAuthStateChanged
+    onAuthStateChanged,
+    setPersistence,
+    browserLocalPersistence
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -1010,18 +1012,22 @@ async function migrateLegacyProjects(userId) {
 // App Initiation / Auth
 document.addEventListener('DOMContentLoaded', async () => {
     if (auth) {
-        console.log("Checking for redirect result...");
-        // Gestisci il completamento del login (fondamentale per dopo il redirect)
+        // Mostra un piccolo indicatore di caricamento se possibile o nascondi tutto finché non sappiamo chi è l'utente
+        console.log("Initializing Auth with Domain:", firebaseConfig.authDomain);
+
         try {
+            // Forza la persistenza locale (fondamentale per mobile)
+            await setPersistence(auth, browserLocalPersistence);
+
+            console.log("Checking for redirect result...");
             const result = await getRedirectResult(auth);
             if (result?.user) {
                 console.log("Redirect login success:", result.user.email);
+                state.currentUser = result.user;
             }
         } catch (err) {
-            console.error("Auth redirect error:", err);
-            if (err.code !== 'auth/web-storage-unsupported') {
-                alert("Errore accesso (Redirect): " + err.message);
-            }
+            console.error("Auth initialization error:", err);
+            // Non blocchiamo l'app per errori di persistenza minori
         }
 
         // Monitoraggio stato utente
