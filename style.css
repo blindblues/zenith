@@ -251,12 +251,11 @@ body {
 
 .auth-card {
     background: var(--bg-card);
-    padding: 3rem;
+    padding: 2rem 2.5rem;
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     text-align: center;
-    max-width: 400px;
-    width: 100%;
+    width: 340px;
     max-width: 90%;
     border: 1px solid var(--border-color);
     box-sizing: border-box;
