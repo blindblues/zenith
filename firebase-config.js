@@ -1,6 +1,6 @@
 export const firebaseConfig = {
     apiKey: "AIzaSyAoTueKYdvDBmrn3LGDRJTHaxfLBxvYaNE",
-    authDomain: "zenith-ec6df.firebaseapp.com",
+    authDomain: "auth.zenith.blindblues.com",
     projectId: "zenith-ec6df",
     storageBucket: "zenith-ec6df.firebasestorage.app",
     messagingSenderId: "1049703357480",

@@ -57,9 +57,19 @@ let state = {
 const authScreen = document.getElementById('auth-screen');
 const appScreen = document.getElementById('app');
 const loginBtn = document.getElementById('login-btn');
-const logoutBtn = document.getElementById('logout-btn');
+const logoutBtn = document.getElementById('logout-btn'); // Ora nel modal settings
 const userAvatar = document.getElementById('user-avatar');
 const userName = document.getElementById('user-name');
+
+// Settings Selectors
+const settingsBtn = document.getElementById('settings-btn');
+const settingsModal = document.getElementById('settings-modal');
+const closeSettingsBtn = document.getElementById('close-settings');
+const settingsUserName = document.getElementById('settings-user-name');
+const settingsUserEmail = document.getElementById('settings-user-email');
+const settingsUserAvatar = document.getElementById('settings-user-avatar');
+const colorOptions = document.querySelectorAll('.color-option');
+const themeBtns = document.querySelectorAll('.theme-btn');
 
 // Selectors
 const projectsList = document.getElementById('projects-list');
@@ -97,6 +107,61 @@ function initIcons() {
         lucide.createIcons();
     }
 }
+
+// Theme & Color Logic
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('zenith_theme', theme);
+    themeBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.theme === theme);
+    });
+}
+
+function applyColor(color) {
+    const root = document.documentElement;
+    root.style.setProperty('--primary', color);
+    root.style.setProperty('--primary-dark', adjustColor(color, -20));
+    root.style.setProperty('--primary-light', hexToRgba(color, 0.12));
+    root.style.setProperty('--primary-medium', hexToRgba(color, 0.2));
+    root.style.setProperty('--accent', adjustColor(color, 15));
+
+    // Aggiorna colori priorità progetti
+    root.style.setProperty('--p1-start', adjustColor(color, 15));
+    root.style.setProperty('--p1-end', color);
+    root.style.setProperty('--p2-start', color);
+    root.style.setProperty('--p2-end', adjustColor(color, -15));
+    root.style.setProperty('--p3-start', adjustColor(color, -25));
+    root.style.setProperty('--p3-end', adjustColor(color, -40));
+
+    localStorage.setItem('zenith_primary_color', color);
+
+    colorOptions.forEach(opt => {
+        opt.classList.toggle('active', opt.dataset.color === color);
+    });
+}
+
+// Helper per generare variazioni di colore
+function adjustColor(hex, percent) {
+    const num = parseInt(hex.replace('#', ''), 16),
+        amt = Math.round(2.55 * percent),
+        R = (num >> 16) + amt,
+        G = (num >> 8 & 0x00FF) + amt,
+        B = (num & 0x0000FF) + amt;
+    return "#" + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 + (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 + (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1);
+}
+
+function hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16),
+        g = parseInt(hex.slice(3, 5), 16),
+        b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// Carica preferenze salvate
+const savedTheme = localStorage.getItem('zenith_theme') || 'light';
+const savedColor = localStorage.getItem('zenith_primary_color') || '#009dff';
+applyTheme(savedTheme);
+applyColor(savedColor);
 
 // Data Syncing with Firestore
 let projectsUnsubscribe = null;
@@ -971,7 +1036,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (user.photoURL) {
                     userAvatar.src = user.photoURL;
                     userAvatar.style.display = 'block';
+                    settingsUserAvatar.src = user.photoURL;
                 }
+                settingsUserName.innerText = user.displayName || 'Utente Zenith';
+                settingsUserEmail.innerText = user.email;
 
                 authScreen.style.display = 'none';
                 appScreen.style.display = 'flex';
@@ -1029,6 +1097,31 @@ document.addEventListener('DOMContentLoaded', async () => {
             signOut(auth).then(() => {
                 window.location.reload(); // Forza ricarica per pulire tutto
             }).catch(err => console.error("Logout error:", err));
+        });
+
+        // Settings Modal Toggle
+        settingsBtn.addEventListener('click', () => {
+            settingsModal.classList.add('active');
+            initIcons();
+        });
+
+        closeSettingsBtn.addEventListener('click', () => {
+            settingsModal.classList.remove('active');
+        });
+
+        // Color Selection
+        colorOptions.forEach(btn => {
+            btn.addEventListener('click', () => applyColor(btn.dataset.color));
+        });
+
+        // Theme Selection
+        themeBtns.forEach(btn => {
+            btn.addEventListener('click', () => applyTheme(btn.dataset.theme));
+        });
+
+        // Chiudi modal cliccando fuori
+        window.addEventListener('click', (e) => {
+            if (e.target === settingsModal) settingsModal.classList.remove('active');
         });
     } else {
         setupSync();

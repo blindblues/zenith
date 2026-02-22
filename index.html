@@ -78,8 +78,8 @@
                     <div class="user-info">
                         <span id="user-name">...</span>
                     </div>
-                    <button id="logout-btn" class="icon-btn" title="Esci">
-                        <i data-lucide="log-out"></i>
+                    <button id="settings-btn" class="icon-btn" title="Impostazioni">
+                        <i data-lucide="settings"></i>
                     </button>
                 </div>
                 <p>&copy; 2026 Zenith</p>
@@ -161,6 +161,66 @@
                 <div class="modal-actions">
                     <button id="cancel-task" class="btn">Annulla</button>
                     <button id="save-task" class="btn primary-btn">Aggiungi</button>
+                </div>
+            </div>
+        </div>
+        <div id="settings-modal" class="modal">
+            <div class="modal-content settings-modal-content">
+                <h3>Impostazioni</h3>
+
+                <div class="settings-section">
+                    <h4>Account</h4>
+                    <div class="user-settings-info">
+                        <img src="" alt="Avatar" id="settings-user-avatar" class="user-avatar">
+                        <div class="user-info">
+                            <span id="settings-user-name" style="font-weight: 700;">...</span>
+                            <span id="settings-user-email"
+                                style="font-size: 0.75rem; color: var(--text-muted);">...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h4>Colore Interfaccia</h4>
+                    <div class="color-grid" id="color-grid">
+                        <!-- Spettro: Rosso, Arancio, Giallo, Verde, Verde Acqua, Azzurro, Blu, Viola, Rosa, Marrone -->
+                        <div class="color-option" data-color="#ef4444" style="background: #ef4444;" title="Rosso"></div>
+                        <div class="color-option" data-color="#f97316" style="background: #f97316;" title="Arancione">
+                        </div>
+                        <div class="color-option" data-color="#f59e0b" style="background: #f59e0b;" title="Giallo">
+                        </div>
+                        <div class="color-option" data-color="#10b981" style="background: #10b981;" title="Verde"></div>
+                        <div class="color-option" data-color="#0edbc3" style="background: #0edbc3;" title="Verde Acqua">
+                        </div>
+                        <div class="color-option" data-color="#009dff" style="background: #009dff;" title="Azzurro">
+                        </div>
+                        <div class="color-option" data-color="#2563eb" style="background: #2563eb;" title="Blu"></div>
+                        <div class="color-option" data-color="#8b5cf6" style="background: #8b5cf6;" title="Viola"></div>
+                        <div class="color-option" data-color="#ec4899" style="background: #ec4899;" title="Rosa"></div>
+                        <div class="color-option" data-color="#78350f" style="background: #78350f;" title="Marrone">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h4>Tema</h4>
+                    <div class="theme-toggle-group">
+                        <button class="theme-btn active" data-theme="light">
+                            <i data-lucide="sun"></i>
+                            <span>Chiaro</span>
+                        </button>
+                        <button class="theme-btn" data-theme="dark">
+                            <i data-lucide="moon"></i>
+                            <span>Scuro</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="modal-actions" style="flex-direction: column; gap: 0.5rem;">
+                    <button id="logout-btn" class="btn logout-danger-btn">
+                        <i data-lucide="log-out"></i> Esci dall'account
+                    </button>
+                    <button id="close-settings" class="btn" style="width: 100%; border: none;">Chiudi</button>
                 </div>
             </div>
         </div>
