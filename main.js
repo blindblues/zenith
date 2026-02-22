@@ -9,6 +9,8 @@ import {
     where,
     getDocs,
     doc,
+    getDoc,
+    setDoc,
     updateDoc,
     deleteDoc,
     serverTimestamp
@@ -111,15 +113,25 @@ function initIcons() {
 }
 
 // Theme & Color Logic
-function applyTheme(theme) {
+async function applyTheme(theme, saveToCloud = true) {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('zenith_theme', theme);
     themeBtns.forEach(btn => {
         btn.classList.toggle('active', btn.dataset.theme === theme);
     });
+
+    if (saveToCloud && state.currentUser) {
+        try {
+            await setDoc(doc(db, "userSettings", state.currentUser.uid), {
+                theme: theme
+            }, { merge: true });
+        } catch (e) {
+            console.error("Error saving theme to cloud:", e);
+        }
+    }
 }
 
-function applyColor(color) {
+async function applyColor(color, saveToCloud = true) {
     const root = document.documentElement;
     root.style.setProperty('--primary', color);
     root.style.setProperty('--primary-dark', adjustColor(color, -20));
@@ -140,6 +152,16 @@ function applyColor(color) {
     colorOptions.forEach(opt => {
         opt.classList.toggle('active', opt.dataset.color === color);
     });
+
+    if (saveToCloud && state.currentUser) {
+        try {
+            await setDoc(doc(db, "userSettings", state.currentUser.uid), {
+                primaryColor: color
+            }, { merge: true });
+        } catch (e) {
+            console.error("Error saving color to cloud:", e);
+        }
+    }
 }
 
 // Helper per generare variazioni di colore
@@ -1060,8 +1082,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                 authScreen.style.display = 'none';
                 appScreen.style.display = 'flex';
 
-                // Migra progetti legacy e carica dati
+                // Sync data
                 await migrateLegacyProjects(user.uid);
+
+                // Carica preferenze utente da Firestore
+                try {
+                    const settingsSnap = await getDoc(doc(db, "userSettings", user.uid));
+                    if (settingsSnap.exists()) {
+                        const settings = settingsSnap.data();
+                        if (settings.theme) applyTheme(settings.theme, false);
+                        if (settings.primaryColor) applyColor(settings.primaryColor, false);
+                    }
+                } catch (e) {
+                    console.error("Error loading user settings:", e);
+                }
+
                 setupSync();
                 setupDragAndDrop();
                 initIcons();
