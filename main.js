@@ -988,24 +988,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         loginBtn.addEventListener('click', () => {
-            // Forza Google a mostrare sempre la selezione account per evitare loop di cache silenti
-            provider.setCustomParameters({
-                prompt: 'select_account'
-            });
+            // Su iOS Safari e Chrome mobile il metodo migliore è signInWithRedirect
+            // ma dobbiamo avviare il redirect al tocco immediato.
+            const isMobile = window.innerWidth <= 768 || navigator.maxTouchPoints > 0 || /Mobi|Android/i.test(navigator.userAgent);
 
-            // Usiamo signInWithPopup ovunque, perché la redirect method su iOS soffre
-            // pesantemente le difese anti-tracciamento di Apple (ITP), bloccando il completamento del login.
-            signInWithPopup(auth, provider).catch(err => {
-                console.error("Popup Login err:", err);
-                if (err.code === 'auth/popup-blocked') {
-                    alert("⚠️ Popup bloccato dal browser!\n\nPer favore, consenti i popup per questo sito per effettuare l'accesso con Google (su iOS, disattiva temporaneamente il Blocco finestre a comparsa nelle Impostazioni di Safari), oppure riprova premendo nuovamente accedere.");
-                    // Tentativo di fallback in caso estremo
-                    signInWithRedirect(auth, provider);
-                } else {
+            if (isMobile) {
+                signInWithRedirect(auth, provider).catch(err => {
+                    console.error("Redirect Trigger Error:", err);
+                    alert("Errore nell'avvio del login Google: " + err.message);
+                });
+            } else {
+                signInWithPopup(auth, provider).catch(err => {
+                    console.error("Popup Login err:", err);
                     alert("Errore durante login: " + err.message);
-                }
-            });
+                });
+            }
         });
+
+
 
         logoutBtn.addEventListener('click', () => {
             signOut(auth).catch(err => console.error("Logout err:", err));
