@@ -16,6 +16,7 @@ import {
 import {
     getAuth,
     signInWithPopup,
+    signInWithRedirect,
     GoogleAuthProvider,
     signOut,
     onAuthStateChanged
@@ -979,7 +980,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         loginBtn.addEventListener('click', () => {
-            signInWithPopup(auth, provider).catch(err => console.error("Login err:", err));
+            // Su mobile usa redirect perché i popup sono bloccati o causano problemi di sessione
+            // su iOS e browser mobile (Chrome/Safari).
+            const isMobile = window.innerWidth <= 768 || navigator.maxTouchPoints > 0 || /Mobi|Android/i.test(navigator.userAgent);
+
+            if (isMobile) {
+                signInWithRedirect(auth, provider).catch(err => console.error("Redirect Login err:", err));
+            } else {
+                signInWithPopup(auth, provider).catch(err => console.error("Popup Login err:", err));
+            }
         });
 
         logoutBtn.addEventListener('click', () => {
