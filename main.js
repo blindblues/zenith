@@ -945,36 +945,47 @@ async function migrateLegacyProjects(userId) {
 // App Initiation / Auth
 document.addEventListener('DOMContentLoaded', () => {
     if (auth) {
-        // Gestisci il risultato del redirect (fondamentale per mobile)
-        getRedirectResult(auth).catch(err => {
-            console.error("Redirect Login Error:", err);
-            // Non mostriamo alert qui per non disturbare l'utente se non è un errore critico
-        });
+        // Gestisci il completamento del login (fondamentale per dopo il redirect)
+        getRedirectResult(auth)
+            .then((result) => {
+                if (result?.user) {
+                    console.log("Redirect login success:", result.user.email);
+                }
+            })
+            .catch(err => {
+                console.error("Auth redirect error:", err);
+                alert("Errore accesso (Redirect): " + err.message);
+            });
 
+        // Monitoraggio stato utente
         onAuthStateChanged(auth, async (user) => {
+            console.log("Auth state changed, user:", user ? user.email : "null");
+
             if (user) {
                 state.currentUser = user;
-                authScreen.style.display = 'none';
-                appScreen.style.display = 'flex';
 
+                // Aggiorna UI Profilo
                 userName.innerText = user.displayName || user.email;
                 if (user.photoURL) {
                     userAvatar.src = user.photoURL;
                     userAvatar.style.display = 'block';
                 }
 
-                // Migra i progetti senza account al current user
-                await migrateLegacyProjects(user.uid);
+                // Nascondi login, mostra app
+                authScreen.style.display = 'none';
+                appScreen.style.display = 'flex';
 
+                // Migra e sincronizza
+                await migrateLegacyProjects(user.uid);
                 setupSync();
                 setupDragAndDrop();
                 initIcons();
 
-                // Welcome Animation (solo desktop)
+                // Animazioni
                 if (window.innerWidth > 768) {
                     gsap.from('.sidebar', { x: -50, opacity: 0, duration: 0.8, ease: 'power3.out' });
                 }
-                gsap.from('.top-bar', { y: -20, opacity: 0, duration: 0.8, delay: 0.2, ease: 'power3.out' });
+                gsap.from('.top-bar', { y: -20, opacity: 0, duration: 0.8, delay: 0.1, ease: 'power3.out' });
 
             } else {
                 state.currentUser = null;
@@ -985,21 +996,31 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+        // Pulsante Login
         loginBtn.addEventListener('click', () => {
-            const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
+            // Su mobile (specialmente iOS) signInWithRedirect è molto più affidabile perché evita il blocco popup
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
             if (isMobile) {
-                signInWithRedirect(auth, provider);
+                signInWithRedirect(auth, provider).catch(err => {
+                    alert("Errore avvio redirect: " + err.message);
+                });
             } else {
                 signInWithPopup(auth, provider).catch(err => {
-                    if (err.code === 'auth/popup-blocked') {
+                    console.error("Popup error:", err);
+                    if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request') {
                         signInWithRedirect(auth, provider);
+                    } else {
+                        alert("Errore login: " + err.message);
                     }
                 });
             }
         });
 
         logoutBtn.addEventListener('click', () => {
-            signOut(auth).catch(err => console.error("Logout error:", err));
+            signOut(auth).then(() => {
+                window.location.reload(); // Forza ricarica per pulire tutto
+            }).catch(err => console.error("Logout error:", err));
         });
     } else {
         setupSync();
