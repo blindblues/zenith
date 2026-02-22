@@ -40,7 +40,6 @@ let state = {
 // Selectors
 const projectsList = document.getElementById('projects-list');
 const activeProjectName = document.getElementById('active-project-name');
-const activeProjectStats = document.getElementById('active-project-stats');
 const addTaskBtn = document.getElementById('add-task-btn');
 const todoList = document.getElementById('todo-list');
 const inProgressList = document.getElementById('in-progress-list');
@@ -107,6 +106,11 @@ function setupSync() {
 
         renderProjects();
         if (state.activeProjectId) {
+            const activeProject = state.projects.find(p => p.id === state.activeProjectId);
+            if (activeProject) {
+                activeProjectName.innerText = activeProject.name;
+                addTaskBtn.disabled = false;
+            }
             syncTasks(state.activeProjectId);
         }
     });
@@ -118,22 +122,25 @@ function syncTasks(projectId) {
     if (!db) return;
     if (tasksUnsubscribe) tasksUnsubscribe();
 
-    // Nessun orderBy per evitare di escludere task senza il campo 'createdAt'
     const tasksCol = collection(db, `projects/${projectId}/tasks`);
-    tasksUnsubscribe = onSnapshot(tasksCol, (snapshot) => {
+    tasksUnsubscribe = onSnapshot(tasksCol, async (snapshot) => {
         const tasks = snapshot.docs.map(d => ({
             id: d.id,
             ...d.data()
         }));
 
-        // Ordinamento client-side per data di creazione
-        tasks.sort((a, b) => {
-            const tA = a.createdAt?.seconds ?? 0;
-            const tB = b.createdAt?.seconds ?? 0;
-            return tA - tB;
-        });
+        // Migrazione: assegna 'order' alle task che non ce l'hanno
+        for (let i = 0; i < tasks.length; i++) {
+            if (tasks[i].order === undefined || tasks[i].order === null) {
+                const tRef = doc(db, `projects/${projectId}/tasks`, tasks[i].id);
+                await updateDoc(tRef, { order: i });
+                tasks[i].order = i;
+            }
+        }
 
-        // Update local state for the active project
+        // Ordinamento per campo 'order'
+        tasks.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+
         const project = state.projects.find(p => p.id === projectId);
         if (project) {
             project.tasks = tasks;
@@ -155,9 +162,11 @@ function renderProjects() {
         const priorityClass = index < 3 ? `priority-${index + 1}` : '';
 
         li.innerHTML = `
+            <div class="project-drag-handle" title="Trascina per riordinare">
+                <i data-lucide="grip-vertical"></i>
+            </div>
             <div class="project-priority ${priorityClass}">${index + 1}</div>
             <div class="project-link">
-                <i data-lucide="folder"></i>
                 <span>${project.name}</span>
             </div>
             <div class="project-item-actions">
@@ -170,11 +179,10 @@ function renderProjects() {
             </div>
         `;
 
-        // Drag events for projects
+        // Desktop drag events
         li.addEventListener('dragstart', (e) => {
             li.classList.add('project-dragging');
             e.dataTransfer.setData('project/id', project.id);
-            e.dataTransfer.setData('project/index', index);
         });
 
         li.addEventListener('dragend', () => {
@@ -195,12 +203,14 @@ function renderProjects() {
             e.preventDefault();
             li.classList.remove('drag-over-project');
             const draggedId = e.dataTransfer.getData('project/id');
-            const targetId = project.id;
-
-            if (draggedId !== targetId) {
-                reorderProjects(draggedId, targetId);
+            if (draggedId !== project.id) {
+                reorderProjects(draggedId, project.id);
             }
         });
+
+        // Touch drag for mobile (sull'handle)
+        const handle = li.querySelector('.project-drag-handle');
+        setupProjectTouchDrag(handle, li, project, index);
 
         li.querySelector('.project-link').addEventListener('click', () => selectProject(project.id));
         li.querySelector('.rename-project-btn').addEventListener('click', (e) => {
@@ -211,9 +221,93 @@ function renderProjects() {
             e.stopPropagation();
             deleteProject(project.id);
         });
+
         projectsList.appendChild(li);
     });
     initIcons();
+}
+
+// Touch drag and drop per progetti
+let projectTouchState = { active: false, projectId: null, clone: null, timer: null };
+
+function setupProjectTouchDrag(handle, li, project, index) {
+    handle.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+
+        projectTouchState.timer = setTimeout(() => {
+            projectTouchState.active = true;
+            projectTouchState.projectId = project.id;
+
+            const clone = li.cloneNode(true);
+            clone.className = 'project-item touch-drag-clone';
+            clone.style.position = 'fixed';
+            clone.style.width = li.offsetWidth + 'px';
+            clone.style.zIndex = '1000';
+            clone.style.opacity = '0.9';
+            clone.style.pointerEvents = 'none';
+            clone.style.left = li.getBoundingClientRect().left + 'px';
+            clone.style.top = (touch.clientY - 20) + 'px';
+            clone.style.boxShadow = '0 6px 20px rgba(0,168,255,0.3)';
+            clone.style.background = 'white';
+            document.body.appendChild(clone);
+            projectTouchState.clone = clone;
+
+            li.classList.add('project-dragging');
+            if (navigator.vibrate) navigator.vibrate(30);
+        }, 50);
+    }, { passive: false });
+
+    handle.addEventListener('touchmove', (e) => {
+        if (!projectTouchState.active) return;
+        e.preventDefault();
+        const touch = e.touches[0];
+
+        if (projectTouchState.clone) {
+            projectTouchState.clone.style.top = (touch.clientY - 20) + 'px';
+        }
+
+        // Evidenzia il progetto sotto il dito
+        document.querySelectorAll('.project-item').forEach(item => {
+            const rect = item.getBoundingClientRect();
+            if (touch.clientY >= rect.top && touch.clientY <= rect.bottom && item.dataset.id !== projectTouchState.projectId) {
+                item.classList.add('drag-over-project');
+            } else {
+                item.classList.remove('drag-over-project');
+            }
+        });
+    }, { passive: false });
+
+    handle.addEventListener('touchend', async (e) => {
+        clearTimeout(projectTouchState.timer);
+        if (!projectTouchState.active) return;
+
+        const touch = e.changedTouches[0];
+        let targetId = null;
+
+        document.querySelectorAll('.project-item').forEach(item => {
+            item.classList.remove('drag-over-project');
+            const rect = item.getBoundingClientRect();
+            if (touch.clientY >= rect.top && touch.clientY <= rect.bottom && item.dataset.id !== projectTouchState.projectId) {
+                targetId = item.dataset.id;
+            }
+        });
+
+        if (targetId && projectTouchState.projectId) {
+            await reorderProjects(projectTouchState.projectId, targetId);
+        }
+
+        if (projectTouchState.clone) projectTouchState.clone.remove();
+        li.classList.remove('project-dragging');
+        projectTouchState = { active: false, projectId: null, clone: null, timer: null };
+    });
+
+    handle.addEventListener('touchcancel', () => {
+        clearTimeout(projectTouchState.timer);
+        if (projectTouchState.clone) projectTouchState.clone.remove();
+        li.classList.remove('project-dragging');
+        projectTouchState = { active: false, projectId: null, clone: null, timer: null };
+    });
 }
 
 async function reorderProjects(draggedId, targetId) {
@@ -272,7 +366,7 @@ function renderTasks() {
 
     project.tasks.forEach(task => {
         counts[task.status]++;
-        const taskEl = createTaskElement(task);
+        const taskEl = createTaskElement(task, counts[task.status]);
 
         if (task.status === 'todo') todoList.appendChild(taskEl);
         if (task.status === 'in-progress') inProgressList.appendChild(taskEl);
@@ -283,26 +377,31 @@ function renderTasks() {
     inProgressCount.innerText = counts['in-progress'];
     completedCount.innerText = counts.completed;
 
-    activeProjectStats.innerText = `${project.tasks.length} task totali`;
     initIcons();
 }
 
 // Create Task Element
-function createTaskElement(task) {
+function createTaskElement(task, priority) {
     const div = document.createElement('div');
     div.className = 'task-card fade-in';
     div.draggable = true;
     div.dataset.id = task.id;
+    div.dataset.status = task.status;
     div.innerHTML = `
-        <h4>${task.title}</h4>
+        <div class="task-header">
+            <span class="task-priority">${priority}</span>
+            <h4>${task.title}</h4>
+        </div>
         ${task.description ? `<p>${task.description}</p>` : ''}
         <div class="task-actions">
+            ${task.status !== 'todo' ? `<button class="task-move-btn move-prev" title="Sposta indietro"><i data-lucide="chevron-left"></i></button>` : ''}
+            ${task.status !== 'completed' ? `<button class="task-move-btn move-next" title="Sposta avanti"><i data-lucide="chevron-right"></i></button>` : ''}
             <button class="icon-btn edit-task-btn" data-id="${task.id}" title="Modifica Task"><i data-lucide="pencil"></i></button>
             <button class="icon-btn delete-btn" data-id="${task.id}" title="Elimina Task"><i data-lucide="trash-2"></i></button>
         </div>
     `;
 
-    // Drag events on the task
+    // Desktop drag events
     div.addEventListener('dragstart', (e) => {
         div.classList.add('dragging');
         e.dataTransfer.setData('text/plain', task.id);
@@ -312,14 +411,95 @@ function createTaskElement(task) {
         div.classList.remove('dragging');
     });
 
+    // Riordino task tramite drop su altra task
+    div.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Rimuovi indicatori da tutte le task
+        document.querySelectorAll('.drag-insert-above, .drag-insert-below').forEach(el => {
+            el.classList.remove('drag-insert-above', 'drag-insert-below');
+        });
+
+        // Mostra linea sopra o sotto in base alla posizione del mouse
+        const rect = div.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        if (e.clientY < midY) {
+            div.classList.add('drag-insert-above');
+        } else {
+            div.classList.add('drag-insert-below');
+        }
+    });
+
+    div.addEventListener('dragleave', () => {
+        div.classList.remove('drag-insert-above', 'drag-insert-below');
+    });
+
+    div.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Determina se inserire sopra o sotto
+        const rect = div.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        const insertBefore = e.clientY < midY;
+
+        div.classList.remove('drag-insert-above', 'drag-insert-below');
+        document.querySelectorAll('.drag-insert-above, .drag-insert-below').forEach(el => {
+            el.classList.remove('drag-insert-above', 'drag-insert-below');
+        });
+
+        const draggedId = e.dataTransfer.getData('text/plain');
+        if (draggedId && draggedId !== task.id && db) {
+            await reorderTasks(draggedId, task.id, task.status, insertBefore);
+        }
+    });
+
     // Event Listeners for actions
     div.querySelector('.delete-btn').addEventListener('click', () => deleteTask(task.id));
     div.querySelector('.edit-task-btn').addEventListener('click', () => openEditTaskModal(task));
 
+    const nextBtn = div.querySelector('.move-next');
+    if (nextBtn) nextBtn.addEventListener('click', () => moveTask(task.id, 'next'));
+    const prevBtn = div.querySelector('.move-prev');
+    if (prevBtn) prevBtn.addEventListener('click', () => moveTask(task.id, 'prev'));
+
+    // Touch drag and drop per mobile
+    if ('ontouchstart' in window) {
+        setupTouchDragOnCard(div, task);
+    }
+
     return div;
 }
 
-// Add Drop listeners to columns
+// Riordinamento task nella stessa colonna
+async function reorderTasks(draggedId, targetId, newStatus, insertBefore = true) {
+    if (!db) return;
+    const project = state.projects.find(p => p.id === state.activeProjectId);
+    if (!project || !project.tasks) return;
+
+    const draggedTask = project.tasks.find(t => t.id === draggedId);
+
+    // Se cambia colonna, aggiorna lo status
+    if (draggedTask.status !== newStatus) {
+        const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, draggedId);
+        await updateDoc(taskRef, { status: newStatus });
+    }
+
+    // Riordina nella colonna di destinazione
+    const columnTasks = project.tasks.filter(t => t.status === newStatus && t.id !== draggedId);
+    const targetIndex = columnTasks.findIndex(t => t.id === targetId);
+    const insertIndex = insertBefore ? targetIndex : targetIndex + 1;
+    columnTasks.splice(insertIndex, 0, { ...draggedTask, status: newStatus });
+
+    // Aggiorna ordini su Firebase
+    for (let i = 0; i < columnTasks.length; i++) {
+        const tRef = doc(db, `projects/${state.activeProjectId}/tasks`, columnTasks[i].id);
+        await updateDoc(tRef, { order: i });
+    }
+}
+
+// Add Drop listeners to columns (Desktop)
 function setupDragAndDrop() {
     const columns = document.querySelectorAll('.column');
 
@@ -341,10 +521,176 @@ function setupDragAndDrop() {
             const newStatus = column.dataset.status;
 
             if (taskId && newStatus && db) {
+                // Assegna l'ordine alla fine della colonna
+                const project = state.projects.find(p => p.id === state.activeProjectId);
+                const columnTasks = project?.tasks?.filter(t => t.status === newStatus) || [];
+                const newOrder = columnTasks.length;
+
                 const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, taskId);
-                await updateDoc(taskRef, { status: newStatus });
+                await updateDoc(taskRef, { status: newStatus, order: newOrder });
             }
         });
+    });
+}
+
+// Touch Drag and Drop (Mobile)
+let touchDragState = {
+    active: false,
+    taskId: null,
+    clone: null,
+    startX: 0,
+    startY: 0,
+    timer: null
+};
+
+function setupTouchDragOnCard(div, task) {
+    div.addEventListener('touchstart', (e) => {
+        if (e.target.closest('button')) return;
+
+        const touch = e.touches[0];
+        touchDragState.startX = touch.clientX;
+        touchDragState.startY = touch.clientY;
+
+        touchDragState.timer = setTimeout(() => {
+            touchDragState.active = true;
+            touchDragState.taskId = task.id;
+
+            const clone = div.cloneNode(true);
+            clone.className = 'task-card touch-drag-clone';
+            clone.style.position = 'fixed';
+            clone.style.width = div.offsetWidth + 'px';
+            clone.style.zIndex = '1000';
+            clone.style.opacity = '0.85';
+            clone.style.pointerEvents = 'none';
+            clone.style.left = (touch.clientX - div.offsetWidth / 2) + 'px';
+            clone.style.top = (touch.clientY - 30) + 'px';
+            document.body.appendChild(clone);
+            touchDragState.clone = clone;
+
+            div.classList.add('dragging');
+            if (navigator.vibrate) navigator.vibrate(30);
+        }, 80);
+    }, { passive: true });
+
+    div.addEventListener('touchmove', (e) => {
+        if (!touchDragState.active) {
+            const touch = e.touches[0];
+            const dx = Math.abs(touch.clientX - touchDragState.startX);
+            const dy = Math.abs(touch.clientY - touchDragState.startY);
+            if (dx > 10 || dy > 10) {
+                clearTimeout(touchDragState.timer);
+            }
+            return;
+        }
+
+        e.preventDefault();
+        const touch = e.touches[0];
+
+        if (touchDragState.clone) {
+            touchDragState.clone.style.left = (touch.clientX - touchDragState.clone.offsetWidth / 2) + 'px';
+            touchDragState.clone.style.top = (touch.clientY - 30) + 'px';
+        }
+
+        // Evidenzia colonna
+        document.querySelectorAll('.column').forEach(col => {
+            const rect = col.getBoundingClientRect();
+            if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
+                touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+                col.classList.add('drag-over');
+            } else {
+                col.classList.remove('drag-over');
+            }
+        });
+
+        // Indicatore di inserimento sulle task
+        document.querySelectorAll('.task-card').forEach(card => {
+            card.classList.remove('drag-insert-above', 'drag-insert-below');
+            if (card.dataset.id === touchDragState.taskId) return;
+
+            const rect = card.getBoundingClientRect();
+            if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
+                touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+                const midY = rect.top + rect.height / 2;
+                if (touch.clientY < midY) {
+                    card.classList.add('drag-insert-above');
+                } else {
+                    card.classList.add('drag-insert-below');
+                }
+            }
+        });
+    }, { passive: false });
+
+    div.addEventListener('touchend', async (e) => {
+        clearTimeout(touchDragState.timer);
+        if (!touchDragState.active) return;
+
+        const touch = e.changedTouches[0];
+
+        // Cerca una task-card sotto il punto di rilascio
+        let targetTaskId = null;
+        let insertBefore = true;
+        let targetStatus = null;
+
+        document.querySelectorAll('.task-card').forEach(card => {
+            card.classList.remove('drag-insert-above', 'drag-insert-below');
+            if (card.dataset.id === touchDragState.taskId) return;
+
+            const rect = card.getBoundingClientRect();
+            if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
+                touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+                targetTaskId = card.dataset.id;
+                targetStatus = card.dataset.status;
+                const midY = rect.top + rect.height / 2;
+                insertBefore = touch.clientY < midY;
+            }
+        });
+
+        // Pulisci colonne
+        document.querySelectorAll('.column').forEach(col => col.classList.remove('drag-over'));
+
+        if (targetTaskId && touchDragState.taskId && db) {
+            // Rilasciato su una task specifica → riordina
+            await reorderTasks(touchDragState.taskId, targetTaskId, targetStatus, insertBefore);
+        } else {
+            // Rilasciato su una colonna vuota → sposta alla fine
+            let targetColumn = null;
+            document.querySelectorAll('.column').forEach(col => {
+                const rect = col.getBoundingClientRect();
+                if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
+                    touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+                    targetColumn = col;
+                }
+            });
+
+            if (targetColumn && touchDragState.taskId && db) {
+                const newStatus = targetColumn.dataset.status;
+                const project = state.projects.find(p => p.id === state.activeProjectId);
+                const columnTasks = project?.tasks?.filter(t => t.status === newStatus) || [];
+                const newOrder = columnTasks.length;
+                const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, touchDragState.taskId);
+                await updateDoc(taskRef, { status: newStatus, order: newOrder });
+            }
+        }
+
+        // Pulisci
+        if (touchDragState.clone) touchDragState.clone.remove();
+        div.classList.remove('dragging');
+        touchDragState.active = false;
+        touchDragState.taskId = null;
+        touchDragState.clone = null;
+    });
+
+    div.addEventListener('touchcancel', () => {
+        clearTimeout(touchDragState.timer);
+        document.querySelectorAll('.task-card').forEach(card => {
+            card.classList.remove('drag-insert-above', 'drag-insert-below');
+        });
+        document.querySelectorAll('.column').forEach(col => col.classList.remove('drag-over'));
+        if (touchDragState.clone) touchDragState.clone.remove();
+        div.classList.remove('dragging');
+        touchDragState.active = false;
+        touchDragState.taskId = null;
+        touchDragState.clone = null;
     });
 }
 
@@ -364,8 +710,12 @@ async function moveTask(taskId, direction) {
     }
 
     if (newStatus !== task.status) {
+        // Metti alla fine della nuova colonna
+        const project = state.projects.find(p => p.id === state.activeProjectId);
+        const destTasks = project?.tasks?.filter(t => t.status === newStatus) || [];
+        const newOrder = destTasks.length;
         const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, taskId);
-        await updateDoc(taskRef, { status: newStatus });
+        await updateDoc(taskRef, { status: newStatus, order: newOrder });
     }
 }
 
@@ -481,11 +831,14 @@ saveTaskBtn.addEventListener('click', async () => {
                 const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, editId);
                 await updateDoc(taskRef, { title: title, description: desc });
             } else {
-                // Crea nuova task
+                // Crea nuova task - assegna order alla fine della colonna todo
+                const project = state.projects.find(p => p.id === state.activeProjectId);
+                const todoTasks = project?.tasks?.filter(t => t.status === 'todo') || [];
                 await addDoc(collection(db, `projects/${state.activeProjectId}/tasks`), {
                     title: title,
                     description: desc,
                     status: 'todo',
+                    order: todoTasks.length,
                     createdAt: serverTimestamp()
                 });
             }

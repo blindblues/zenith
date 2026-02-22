@@ -8,7 +8,8 @@
     <meta name="description" content="Zenith - Gestione progetti e task con un design moderno e minimale.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -18,10 +19,17 @@
 
 <body>
     <div id="app">
-        <!-- Mobile Menu Toggle -->
-        <button id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Menu">
-            <i data-lucide="menu"></i>
-        </button>
+        <!-- Mobile Top Bar -->
+        <div id="mobile-top-bar" class="mobile-top-bar">
+            <button id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Menu">
+                <i data-lucide="menu"></i>
+            </button>
+            <div class="mobile-logo">
+                <div class="logo-icon"></div>
+                <span>ZENITH</span>
+            </div>
+            <div class="mobile-top-spacer"></div>
+        </div>
         <div id="sidebar-overlay" class="sidebar-overlay"></div>
 
         <!-- Sidebar -->
@@ -57,10 +65,7 @@
         <main class="main-content">
             <header class="top-bar">
                 <div class="current-project-info">
-                    <h2 id="active-project-name">Seleziona un progetto</h2>
-                    <div class="project-stats" id="active-project-stats">
-                        <!-- Stats injected here -->
-                    </div>
+                    <h2 id="active-project-name"></h2>
                 </div>
                 <div class="user-actions">
                     <button id="add-task-btn" class="btn primary-btn" disabled>
