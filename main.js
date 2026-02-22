@@ -1033,26 +1033,12 @@ async function migrateLegacyProjects(userId) {
 
 // App Initiation / Auth
 document.addEventListener('DOMContentLoaded', async () => {
+    const loadingScreen = document.getElementById('loading-screen');
+
     if (auth) {
         console.log("Initializing Auth with Domain:", firebaseConfig.authDomain);
 
-        try {
-            await setPersistence(auth, browserLocalPersistence);
-            console.log("Checking for redirect result...");
-            const result = await getRedirectResult(auth).catch(e => {
-                console.error("Redirect Error caught:", e);
-                return null;
-            });
-
-            if (result?.user) {
-                console.log("Redirect success:", result.user.email);
-                state.currentUser = result.user;
-            }
-        } catch (err) {
-            console.error("Auth init error:", err);
-        }
-
-        // Monitoraggio stato utente
+        // Registra il listener IMMEDIATAMENTE per catturare ogni cambio di stato
         onAuthStateChanged(auth, async (user) => {
             console.log("Auth state changed. User:", user ? user.email : "null");
 
@@ -1071,6 +1057,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 authScreen.style.display = 'none';
                 appScreen.style.display = 'flex';
+                if (loadingScreen) loadingScreen.classList.add('hidden');
 
                 // Sync data
                 await migrateLegacyProjects(user.uid);
@@ -1101,35 +1088,52 @@ document.addEventListener('DOMContentLoaded', async () => {
                 state.currentUser = null;
                 authScreen.style.display = 'flex';
                 appScreen.style.display = 'none';
+                if (loadingScreen) loadingScreen.classList.add('hidden');
+
                 if (projectsUnsubscribe) projectsUnsubscribe();
                 if (tasksUnsubscribe) tasksUnsubscribe();
             }
         });
 
-        // Pulsante Login - Approccio Robusto
+        // Controlla i risultati del redirect in background
+        getRedirectResult(auth).then(result => {
+            if (result?.user) {
+                console.log("Redirect success captured:", result.user.email);
+            }
+        }).catch(err => {
+            console.error("Redirect Result Error:", err);
+            // Non blocchiamo l'esecuzione, onAuthStateChanged gestirà il fallimento
+            if (err.code !== 'auth/configuration-not-found') {
+                console.warn("Possible redirect configuration issue:", err.message);
+            }
+        });
+
+        // Pulsante Login - Approccio Ottimizzato
         loginBtn.addEventListener('click', async () => {
             console.log("Login button clicked");
-            // Su mobile è categorico usare Redirect per evitare blocchi o perdite di sessione
-            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-            if (isMobile) {
-                console.log("Starting redirect login (Mobile)...");
-                try {
-                    await signInWithRedirect(auth, provider);
-                } catch (err) {
-                    alert("Errore avvio login: " + err.message);
-                }
-            } else {
-                console.log("Starting popup login (Desktop)...");
-                try {
-                    await signInWithPopup(auth, provider);
-                } catch (err) {
-                    console.warn("Popup blocked or failed, falling back to redirect:", err.code);
-                    if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request') {
+            // Proviamo prima con il Popup anche su mobile, perché è più istantaneo.
+            // Se fallisce o viene bloccato, passiamo al Redirect.
+            try {
+                console.log("Attempting popup login...");
+                await signInWithPopup(auth, provider);
+            } catch (err) {
+                console.log("Popup failed/blocked, trying redirect:", err.code);
+
+                // Se il popup è bloccato o fallisce per altri motivi comuni, usiamo il redirect
+                if (err.code === 'auth/popup-blocked' ||
+                    err.code === 'auth/cancelled-popup-request' ||
+                    /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+
+                    if (loadingScreen) loadingScreen.classList.remove('hidden');
+                    try {
                         await signInWithRedirect(auth, provider);
-                    } else {
-                        alert("Errore login: " + err.message);
+                    } catch (redirectErr) {
+                        if (loadingScreen) loadingScreen.classList.add('hidden');
+                        alert("Errore avvio login: " + redirectErr.message);
                     }
+                } else {
+                    alert("Errore login: " + err.message);
                 }
             }
         });
