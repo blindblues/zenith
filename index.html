@@ -18,7 +18,23 @@
 </head>
 
 <body>
-    <div id="app">
+    <!-- Auth Screen -->
+    <div id="auth-screen" class="auth-screen">
+        <div class="auth-card">
+            <div class="logo">
+                <div class="logo-icon"></div>
+                <h1>ZENITH</h1>
+            </div>
+            <p>Accedi per gestire i tuoi progetti e task in cloud</p>
+            <button id="login-btn" class="btn primary-btn btn-google">
+                <i data-lucide="log-in"></i>
+                Accedi con Google
+            </button>
+        </div>
+    </div>
+
+    <!-- App Screen (Nascosta all'inizio) -->
+    <div id="app" style="display: none;">
         <!-- Mobile Top Bar -->
         <div id="mobile-top-bar" class="mobile-top-bar">
             <button id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Menu">
@@ -57,6 +73,15 @@
             </div>
 
             <div class="sidebar-footer">
+                <div class="user-profile" id="user-profile">
+                    <img src="" alt="Avatar" id="user-avatar" class="user-avatar" style="display:none">
+                    <div class="user-info">
+                        <span id="user-name">...</span>
+                    </div>
+                    <button id="logout-btn" class="icon-btn" title="Esci">
+                        <i data-lucide="log-out"></i>
+                    </button>
+                </div>
                 <p>&copy; 2026 Zenith</p>
             </div>
         </aside>
