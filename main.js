@@ -34,7 +34,7 @@ try {
         db = getFirestore(app);
         auth = getAuth(app);
         provider = new GoogleAuthProvider();
-        console.log("Firebase initialized successfully");
+        console.log("Firebase initialized successfully. Auth Domain:", firebaseConfig.authDomain);
     } else {
         console.error("Configurazione Firebase mancante o errata in firebase-config.js");
         // Mostra un avviso nell'app
