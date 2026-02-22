@@ -595,7 +595,9 @@ body {
 /* Mobile (< 768px) */
 @media (max-width: 768px) {
     body {
-        overflow: auto;
+        overflow-y: auto;
+        overflow-x: hidden;
+        height: auto;
     }
 
     #app {
@@ -621,10 +623,12 @@ body {
         top: 0;
         left: -300px;
         height: 100vh;
+        height: 100dvh;
         width: 280px;
         transition: left 0.3s ease;
         box-shadow: none;
         z-index: 50;
+        overflow-y: auto;
     }
 
     .sidebar.open {
@@ -632,52 +636,111 @@ body {
         box-shadow: var(--shadow-lg);
     }
 
-    /* Top bar */
+    /* Top bar compatta */
     .top-bar {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 1rem;
-        margin-bottom: 1.5rem;
-        padding-top: 3.5rem;
-        /* Spazio per il pulsante hamburger */
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+        padding-top: 3rem;
     }
 
-    .user-actions {
-        width: 100%;
-    }
-
-    .user-actions .btn {
-        width: 100%;
-        justify-content: center;
+    .current-project-info {
+        flex: 1;
+        min-width: 0;
     }
 
     #active-project-name {
-        font-size: 1.25rem;
+        font-size: 1.1rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .project-stats {
+        font-size: 0.75rem;
+    }
+
+    .user-actions {
+        flex-shrink: 0;
+    }
+
+    .user-actions .btn {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8rem;
     }
 
     .main-content {
-        padding: 1rem;
+        padding: 0.75rem;
+        padding-top: 0.5rem;
     }
 
-    /* Kanban board: scroll orizzontale */
+    /* Kanban board: VERTICALE su mobile */
     .kanban-board {
         display: flex;
-        overflow-x: auto;
-        gap: 1rem;
-        padding-bottom: 1rem;
-        -webkit-overflow-scrolling: touch;
+        flex-direction: column;
+        gap: 0.75rem;
+        flex: none;
     }
 
     .column {
-        min-width: 280px;
-        flex-shrink: 0;
-        min-height: 300px;
+        min-height: auto;
+        padding: 0.75rem;
+        border-radius: var(--radius-md);
+    }
+
+    .column-header {
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.5rem;
+    }
+
+    .column-header h3 {
+        font-size: 0.85rem;
+    }
+
+    /* Task cards compatte */
+    .task-card {
+        padding: 0.75rem;
+    }
+
+    .task-card h4 {
+        font-size: 0.85rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .task-card p {
+        font-size: 0.75rem;
+    }
+
+    .task-actions {
+        margin-top: 0.5rem;
+    }
+
+    .task-list {
+        gap: 0.5rem;
     }
 
     /* Modal adattato */
     .modal-content {
         margin: 1rem;
         max-width: calc(100vw - 2rem);
+        padding: 1.5rem;
+    }
+
+    .modal h3 {
+        font-size: 1.1rem;
+        margin-bottom: 1rem;
+    }
+
+    .modal input,
+    .modal textarea {
+        font-size: 0.9rem;
+        padding: 0.6rem;
+    }
+
+    .modal textarea {
+        height: 70px;
     }
 
     /* Touch: mostra sempre i pulsanti azione progetto */
@@ -689,21 +752,32 @@ body {
     .task-card:hover {
         transform: none;
     }
+
+    /* Footer sidebar */
+    .sidebar-footer {
+        margin-top: auto;
+        padding-top: 1rem;
+    }
 }
 
 /* Small mobile (< 400px) */
 @media (max-width: 400px) {
-    .column {
-        min-width: 250px;
+    .top-bar {
+        padding-top: 3.5rem;
     }
 
-    .top-bar {
-        padding-top: 4rem;
+    #active-project-name {
+        font-size: 1rem;
     }
 
     .project-priority {
         width: 20px;
         height: 20px;
         font-size: 0.65rem;
+    }
+
+    .user-actions .btn {
+        padding: 0.4rem 0.6rem;
+        font-size: 0.75rem;
     }
 }
