@@ -1033,8 +1033,6 @@ async function migrateLegacyProjects(userId) {
 
 // App Initiation / Auth
 document.addEventListener('DOMContentLoaded', async () => {
-    const loadingScreen = document.getElementById('loading-screen');
-
     if (auth) {
         console.log("Initializing Auth with Domain:", firebaseConfig.authDomain);
 
@@ -1057,14 +1055,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Monitoraggio stato utente
         onAuthStateChanged(auth, async (user) => {
             console.log("Auth state changed. User:", user ? user.email : "null");
-
-            // Nascondi sempre il loader dopo la prima risposta dell'auth
-            if (loadingScreen) {
-                setTimeout(() => {
-                    loadingScreen.style.opacity = '0';
-                    setTimeout(() => loadingScreen.style.display = 'none', 300);
-                }, 500);
-            }
 
             if (user) {
                 state.currentUser = user;
