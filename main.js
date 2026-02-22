@@ -6,34 +6,19 @@ import {
     onSnapshot,
     query,
     orderBy,
-    where,
-    getDocs,
     doc,
     updateDoc,
     deleteDoc,
     serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import {
-    getAuth,
-    signInWithPopup,
-    signInWithRedirect,
-    getRedirectResult,
-    GoogleAuthProvider,
-    signOut,
-    onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 // Initialize Firebase
 let db;
-let auth;
-let provider;
 try {
     if (firebaseConfig.apiKey !== "YOUR_API_KEY") {
         const app = initializeApp(firebaseConfig);
         db = getFirestore(app);
-        auth = getAuth(app);
-        provider = new GoogleAuthProvider();
         console.log("Firebase initialized successfully");
     } else {
         console.error("Configurazione Firebase mancante o errata in firebase-config.js");
@@ -48,18 +33,9 @@ try {
 
 // State Management
 let state = {
-    currentUser: null,
     projects: [],
     activeProjectId: localStorage.getItem('zenith_active_project') || null
 };
-
-// Auth Selectors
-const authScreen = document.getElementById('auth-screen');
-const appScreen = document.getElementById('app');
-const loginBtn = document.getElementById('login-btn');
-const logoutBtn = document.getElementById('logout-btn');
-const userAvatar = document.getElementById('user-avatar');
-const userName = document.getElementById('user-name');
 
 // Selectors
 const projectsList = document.getElementById('projects-list');
@@ -99,18 +75,16 @@ function initIcons() {
 }
 
 // Data Syncing with Firestore
-let projectsUnsubscribe = null;
-
 function setupSync() {
-    if (!db || !state.currentUser) {
-        console.warn("Firebase config missing or user not authenticated.");
+    if (!db) {
+        console.warn("Firebase not configured. Using local mode (read-only demo)");
         return;
     }
 
-    if (projectsUnsubscribe) projectsUnsubscribe();
-
-    const qProjects = query(collection(db, "projects"), where("userId", "==", state.currentUser.uid));
-    projectsUnsubscribe = onSnapshot(qProjects, async (snapshot) => {
+    // Sync Projects - NO orderBy su Firestore per non escludere documenti senza il campo 'order'
+    // L'ordinamento viene gestito lato client per resilienza
+    const qProjects = collection(db, "projects");
+    onSnapshot(qProjects, async (snapshot) => {
         state.projects = snapshot.docs.map(d => ({
             id: d.id,
             ...d.data()
@@ -840,18 +814,16 @@ saveProjectBtn.addEventListener('click', async () => {
                 const docRef = await addDoc(collection(db, "projects"), {
                     name: name,
                     order: state.projects.length,
-                    userId: state.currentUser.uid,
                     createdAt: serverTimestamp()
                 });
                 selectProject(docRef.id);
             }
+            projectNameInput.value = '';
+            projectEditId.value = '';
+            projectModal.classList.remove('active');
         } catch (e) {
             console.error("Error saving project: ", e);
         }
-
-        projectNameInput.value = '';
-        projectEditId.value = '';
-        projectModal.classList.remove('active');
     }
 });
 
@@ -928,92 +900,15 @@ mobileMenuBtn.addEventListener('click', openSidebar);
 sidebarOverlay.addEventListener('click', closeSidebar);
 closeSidebarBtn.addEventListener('click', closeSidebar);
 
-// Migrazione dei progetti vecchi (senza owner) all'utente loggato.
-async function migrateLegacyProjects(userId) {
-    if (!db) return;
-    const qProjects = collection(db, "projects");
-    const snap = await getDocs(qProjects);
-
-    // Assegna il userId ai progetti che non ce l'hanno
-    for (const docSnap of snap.docs) {
-        const prod = docSnap.data();
-        if (!prod.userId) {
-            await updateDoc(doc(db, "projects", docSnap.id), { userId: userId });
-        }
-    }
-}
-
-// App Initiation / Auth
+// App Initiation
 document.addEventListener('DOMContentLoaded', () => {
-    if (auth) {
+    setupSync();
+    setupDragAndDrop();
+    initIcons();
 
-        // Verifica errori derivanti dal reindirizzamento
-        getRedirectResult(auth).catch(err => {
-            console.error("Redirect flow error:", err);
-            alert("Errore durante login: " + err.message + "\nSe usi Safari su iOS, disabilita l'opzione 'Impedisci monitoraggio cross-site' nelle impostazioni di Safari.");
-        });
-
-        onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                state.currentUser = user;
-                authScreen.style.display = 'none';
-                appScreen.style.display = 'flex';
-
-                userName.innerText = user.displayName || user.email;
-                if (user.photoURL) {
-                    userAvatar.src = user.photoURL;
-                    userAvatar.style.display = 'block';
-                }
-
-                // Migra i progetti senza account al current user
-                await migrateLegacyProjects(user.uid);
-
-                setupSync();
-                setupDragAndDrop();
-                initIcons();
-
-                // Welcome Animation (solo desktop)
-                if (window.innerWidth > 768) {
-                    gsap.from('.sidebar', { x: -50, opacity: 0, duration: 0.8, ease: 'power3.out' });
-                }
-                gsap.from('.top-bar', { y: -20, opacity: 0, duration: 0.8, delay: 0.2, ease: 'power3.out' });
-
-            } else {
-                state.currentUser = null;
-                authScreen.style.display = 'flex';
-                appScreen.style.display = 'none';
-                if (projectsUnsubscribe) projectsUnsubscribe();
-                if (tasksUnsubscribe) tasksUnsubscribe();
-            }
-        });
-
-        loginBtn.addEventListener('click', () => {
-            // Su iOS Safari e Chrome mobile il metodo migliore è signInWithRedirect
-            // ma dobbiamo avviare il redirect al tocco immediato.
-            const isMobile = window.innerWidth <= 768 || navigator.maxTouchPoints > 0 || /Mobi|Android/i.test(navigator.userAgent);
-
-            if (isMobile) {
-                signInWithRedirect(auth, provider).catch(err => {
-                    console.error("Redirect Trigger Error:", err);
-                    alert("Errore nell'avvio del login Google: " + err.message);
-                });
-            } else {
-                signInWithPopup(auth, provider).catch(err => {
-                    console.error("Popup Login err:", err);
-                    alert("Errore durante login: " + err.message);
-                });
-            }
-        });
-
-
-
-        logoutBtn.addEventListener('click', () => {
-            signOut(auth).catch(err => console.error("Logout err:", err));
-        });
-    } else {
-        // Fallback per test offline o se auth non funziona localmente
-        setupSync();
-        setupDragAndDrop();
-        initIcons();
+    // Welcome Animation (solo desktop)
+    if (window.innerWidth > 768) {
+        gsap.from('.sidebar', { x: -50, opacity: 0, duration: 0.8, ease: 'power3.out' });
     }
+    gsap.from('.top-bar', { y: -20, opacity: 0, duration: 0.8, delay: 0.2, ease: 'power3.out' });
 });
