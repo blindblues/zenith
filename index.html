@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZENITH | Task Management</title>
+    <meta name="description" content="Zenith - Gestione progetti e task con un design moderno e minimale.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- GSAP for animations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+</head>
+
+<body>
+    <div id="app">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <div class="logo-icon"></div>
+                    <h1>ZENITH</h1>
+                </div>
+            </div>
+
+            <div class="projects-section">
+                <div class="section-header">
+                    <h2>I MIEI PROGETTI</h2>
+                    <button id="add-project-btn" class="icon-btn" title="Nuovo Progetto">
+                        <i data-lucide="plus"></i>
+                    </button>
+                </div>
+                <ul id="projects-list" class="projects-list">
+                    <!-- Projects will be injected here -->
+                </ul>
+            </div>
+
+            <div class="sidebar-footer">
+                <p>&copy; 2026 Zenith</p>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="current-project-info">
+                    <h2 id="active-project-name">Seleziona un progetto</h2>
+                    <div class="project-stats" id="active-project-stats">
+                        <!-- Stats injected here -->
+                    </div>
+                </div>
+                <div class="user-actions">
+                    <button id="add-task-btn" class="btn primary-btn" disabled>
+                        <i data-lucide="plus-circle"></i>
+                        Nuova Task
+                    </button>
+                </div>
+            </header>
+
+            <section class="kanban-board">
+                <!-- To Do Column -->
+                <div class="column" data-status="todo">
+                    <div class="column-header">
+                        <span class="status-dot todo"></span>
+                        <h3>Da fare</h3>
+                        <span class="count" id="todo-count">0</span>
+                    </div>
+                    <div class="task-list" id="todo-list">
+                        <!-- Tasks injected here -->
+                    </div>
+                </div>
+
+                <!-- In Progress Column -->
+                <div class="column" data-status="in-progress">
+                    <div class="column-header">
+                        <span class="status-dot in-progress"></span>
+                        <h3>In corso</h3>
+                        <span class="count" id="in-progress-count">0</span>
+                    </div>
+                    <div class="task-list" id="in-progress-list">
+                        <!-- Tasks injected here -->
+                    </div>
+                </div>
+
+                <!-- Completed Column -->
+                <div class="column" data-status="completed">
+                    <div class="column-header">
+                        <span class="status-dot completed"></span>
+                        <h3>Completate</h3>
+                        <span class="count" id="completed-count">0</span>
+                    </div>
+                    <div class="task-list" id="completed-list">
+                        <!-- Tasks injected here -->
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Modals -->
+        <div id="project-modal" class="modal">
+            <div class="modal-content">
+                <h3 id="project-modal-title">Crea Nuovo Progetto</h3>
+                <input type="hidden" id="project-edit-id">
+                <input type="text" id="project-name-input" placeholder="Nome progetto..." autofocus>
+                <div class="modal-actions">
+                    <button id="cancel-project" class="btn">Annulla</button>
+                    <button id="save-project" class="btn primary-btn">Crea</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="task-modal" class="modal">
+            <div class="modal-content">
+                <h3 id="task-modal-title">Nuova Task</h3>
+                <input type="hidden" id="task-edit-id">
+                <input type="text" id="task-title-input" placeholder="Titolo della task..." autofocus>
+                <textarea id="task-desc-input" placeholder="Descrizione (opzionale)"></textarea>
+                <div class="modal-actions">
+                    <button id="cancel-task" class="btn">Annulla</button>
+                    <button id="save-task" class="btn primary-btn">Aggiungi</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="main.js" type="module"></script>
+</body>
+
+</html>
