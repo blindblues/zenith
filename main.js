@@ -192,19 +192,32 @@ function renderProjects() {
 
         li.addEventListener('dragover', (e) => {
             e.preventDefault();
-            li.classList.add('drag-over-project');
+            document.querySelectorAll('.project-item').forEach(item => item.classList.remove('drag-insert-above', 'drag-insert-below'));
+            const rect = li.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            if (e.clientY < midY) {
+                li.classList.add('drag-insert-above');
+            } else {
+                li.classList.add('drag-insert-below');
+            }
         });
 
         li.addEventListener('dragleave', () => {
-            li.classList.remove('drag-over-project');
+            li.classList.remove('drag-insert-above', 'drag-insert-below');
         });
 
         li.addEventListener('drop', async (e) => {
             e.preventDefault();
-            li.classList.remove('drag-over-project');
+            const rect = li.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            const insertBefore = e.clientY < midY;
+
+            li.classList.remove('drag-insert-above', 'drag-insert-below');
+            document.querySelectorAll('.project-item').forEach(item => item.classList.remove('drag-insert-above', 'drag-insert-below'));
+
             const draggedId = e.dataTransfer.getData('project/id');
-            if (draggedId !== project.id) {
-                reorderProjects(draggedId, project.id);
+            if (draggedId && draggedId !== project.id) {
+                await reorderProjects(draggedId, project.id, insertBefore);
             }
         });
 
@@ -267,13 +280,19 @@ function setupProjectTouchDrag(handle, li, project, index) {
             projectTouchState.clone.style.top = (touch.clientY - 20) + 'px';
         }
 
-        // Evidenzia il progetto sotto il dito
+        // Evidenzia linea di inserimento per progetti
         document.querySelectorAll('.project-item').forEach(item => {
+            item.classList.remove('drag-insert-above', 'drag-insert-below');
+            if (item.dataset.id === projectTouchState.projectId) return;
+
             const rect = item.getBoundingClientRect();
-            if (touch.clientY >= rect.top && touch.clientY <= rect.bottom && item.dataset.id !== projectTouchState.projectId) {
-                item.classList.add('drag-over-project');
-            } else {
-                item.classList.remove('drag-over-project');
+            if (touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+                const midY = rect.top + rect.height / 2;
+                if (touch.clientY < midY) {
+                    item.classList.add('drag-insert-above');
+                } else {
+                    item.classList.add('drag-insert-below');
+                }
             }
         });
     }, { passive: false });
@@ -284,17 +303,22 @@ function setupProjectTouchDrag(handle, li, project, index) {
 
         const touch = e.changedTouches[0];
         let targetId = null;
+        let insertBefore = true;
 
         document.querySelectorAll('.project-item').forEach(item => {
-            item.classList.remove('drag-over-project');
+            item.classList.remove('drag-insert-above', 'drag-insert-below');
+            if (item.dataset.id === projectTouchState.projectId) return;
+
             const rect = item.getBoundingClientRect();
-            if (touch.clientY >= rect.top && touch.clientY <= rect.bottom && item.dataset.id !== projectTouchState.projectId) {
+            if (touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
                 targetId = item.dataset.id;
+                const midY = rect.top + rect.height / 2;
+                insertBefore = touch.clientY < midY;
             }
         });
 
         if (targetId && projectTouchState.projectId) {
-            await reorderProjects(projectTouchState.projectId, targetId);
+            await reorderProjects(projectTouchState.projectId, targetId, insertBefore);
         }
 
         if (projectTouchState.clone) projectTouchState.clone.remove();
@@ -304,21 +328,25 @@ function setupProjectTouchDrag(handle, li, project, index) {
 
     handle.addEventListener('touchcancel', () => {
         clearTimeout(projectTouchState.timer);
+        document.querySelectorAll('.project-item').forEach(item => item.classList.remove('drag-insert-above', 'drag-insert-below'));
         if (projectTouchState.clone) projectTouchState.clone.remove();
         li.classList.remove('project-dragging');
         projectTouchState = { active: false, projectId: null, clone: null, timer: null };
     });
 }
 
-async function reorderProjects(draggedId, targetId) {
+async function reorderProjects(draggedId, targetId, insertBefore = true) {
     if (!db) return;
 
     const draggedIndex = state.projects.findIndex(p => p.id === draggedId);
-    const targetIndex = state.projects.findIndex(p => p.id === targetId);
-
     const newProjects = [...state.projects];
     const [draggedProject] = newProjects.splice(draggedIndex, 1);
-    newProjects.splice(targetIndex, 0, draggedProject);
+
+    // Ricalcola il target index sul nuovo array senza il draggedProject
+    const newTargetIndex = newProjects.findIndex(p => p.id === targetId);
+    const insertIndex = insertBefore ? newTargetIndex : newTargetIndex + 1;
+
+    newProjects.splice(insertIndex, 0, draggedProject);
 
     // Update orders in Firebase
     for (let i = 0; i < newProjects.length; i++) {

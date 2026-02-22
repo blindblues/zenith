@@ -176,9 +176,38 @@ body {
     opacity: 0.3;
 }
 
-.project-item.drag-over-project {
-    background-color: var(--primary-medium);
-    border: 1px dashed var(--primary);
+.project-item.drag-insert-above {
+    position: relative;
+}
+
+.project-item.drag-insert-above::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--primary);
+    border-radius: 1px;
+    box-shadow: 0 0 8px rgba(0, 157, 255, 0.4);
+    z-index: 5;
+}
+
+.project-item.drag-insert-below {
+    position: relative;
+}
+
+.project-item.drag-insert-below::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--primary);
+    border-radius: 1px;
+    box-shadow: 0 0 8px rgba(0, 157, 255, 0.4);
+    z-index: 5;
 }
 
 .project-priority {
