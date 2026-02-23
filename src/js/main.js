@@ -587,13 +587,17 @@ function selectProject(id) {
             syncTasks(id);
         }
 
-        gsap.from('.column', {
-            y: 20,
-            opacity: 0,
-            stagger: 0.1,
-            duration: 0.5,
-            ease: 'power2.out'
-        });
+        gsap.fromTo('.column',
+            { y: 20, opacity: 0 },
+            {
+                y: 0,
+                opacity: 1,
+                stagger: 0.1,
+                duration: 0.5,
+                ease: 'power2.out',
+                overwrite: true
+            }
+        );
     }
 }
 
@@ -633,7 +637,7 @@ function renderTasks() {
             ease: "power2.inOut",
             stagger: 0.05,
             absolute: true, // Importante per movimenti fluidi tra colonne
-            onEnter: elements => gsap.fromTo(elements, { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.4 })
+            onEnter: elements => gsap.fromTo(elements, { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.4, overwrite: true })
         });
     }
 }
