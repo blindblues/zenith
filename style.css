@@ -104,24 +104,15 @@ body {
     gap: 0.75rem;
 }
 
-.logo-icon {
-    width: 30px;
-    height: 30px;
+.logo-icon-container {
+    width: 32px;
+    height: 32px;
     background: linear-gradient(135deg, var(--primary), var(--accent));
-    border-radius: 8px;
-    position: relative;
-}
-
-.logo-icon::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 11px;
-    height: 11px;
-    background: var(--bg-sidebar);
-    border-radius: 2px;
+    mask: url('Zenith Logo.svg') no-repeat center;
+    -webkit-mask: url('Zenith Logo.svg') no-repeat center;
+    mask-size: contain;
+    -webkit-mask-size: contain;
+    flex-shrink: 0;
 }
 
 .logo h1 {
