@@ -455,6 +455,14 @@ function setupProjectTouchDrag(handle, li, project, index) {
         // Ignora pulsanti azione
         if (e.target.closest('.icon-btn')) return;
 
+        // --- FIX: Pulisci SEMPRE eventuali residui di drag precedenti ---
+        if (projectTouchState.timer) clearTimeout(projectTouchState.timer);
+        if (projectTouchState.clone) projectTouchState.clone.remove();
+        document.querySelectorAll('.touch-drag-clone').forEach(el => el.remove());
+
+        projectTouchState.active = false;
+        projectTouchState.clone = null;
+
         const touch = e.touches[0];
         const isHandle = e.target.closest('.project-drag-handle');
         const delay = isHandle ? 50 : 500;
@@ -479,7 +487,7 @@ function setupProjectTouchDrag(handle, li, project, index) {
             li.classList.add('project-dragging');
             if (navigator.vibrate) navigator.vibrate(30);
         }, delay);
-    }, { passive: false });
+    }, { passive: true });
 
     const endTouch = async (e) => {
         clearTimeout(projectTouchState.timer);
@@ -829,6 +837,14 @@ function setupTouchDragOnCard(div, task) {
     div.addEventListener('touchstart', (e) => {
         // Se si tocca un pulsante, non attivare il drag
         if (e.target.closest('button')) return;
+
+        // --- FIX: Pulisci SEMPRE eventuali residui di drag precedenti ---
+        if (touchDragState.timer) clearTimeout(touchDragState.timer);
+        if (touchDragState.clone) touchDragState.clone.remove();
+        document.querySelectorAll('.touch-drag-clone').forEach(el => el.remove());
+
+        touchDragState.active = false;
+        touchDragState.clone = null;
 
         const touch = e.touches[0];
         touchDragState.startX = touch.clientX;
