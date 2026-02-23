@@ -1339,8 +1339,13 @@ if (auth) {
 
     // Gestione Risultato Redirect (Mobile)
     getRedirectResult(auth).then((result) => {
-        if (result) {
+        if (result && result.user) {
             console.log("Redirect login successful:", result.user.email);
+            // Forza lo switch della UI se onAuthStateChanged dovesse ritardare su iOS
+            if (authScreen.style.display !== 'none') {
+                authScreen.style.display = 'none';
+                appScreen.style.display = 'flex';
+            }
         }
     }).catch((error) => {
         console.error("Error getting redirect result:", error);
