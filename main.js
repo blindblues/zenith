@@ -1090,6 +1090,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
 
+        // Gestione Risultato Redirect (Mobile)
+        try {
+            const result = await getRedirectResult(auth);
+            if (result) {
+                console.log("Redirect login successful:", result.user.email);
+            }
+        } catch (error) {
+            console.error("Error getting redirect result:", error);
+            if (error.code !== 'auth/web-storage-unsupported') {
+                alert("Errore durante il login: " + error.message);
+            }
+        }
+
         // Pulsante Login - Approccio Robusto (Ripristinato)
         loginBtn.addEventListener('click', async () => {
             console.log("Login button clicked");
