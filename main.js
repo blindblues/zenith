@@ -1359,27 +1359,26 @@ if (auth) {
 
 // Pulsante Login
 loginBtn.addEventListener('click', async () => {
-    console.log("Login button clicked");
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    console.log("Login attempt initiated...");
 
-    if (isMobile) {
-        console.log("Starting redirect login...");
-        try {
-            await signInWithRedirect(auth, provider);
-        } catch (err) {
-            alert("Errore avvio login: " + err.message);
-        }
-    } else {
-        try {
-            console.log("Starting popup login...");
-            await signInWithPopup(auth, provider);
-        } catch (err) {
-            console.warn("Popup blocked or failed, falling back to redirect:", err.code);
-            if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request') {
+    // Prova prima con il Popup anche su mobile, perché è più affidabile per catturare lo stato su iOS
+    // Se Safari lo blocca, catturiamo l'errore e passiamo al redirect.
+    try {
+        console.log("Attempting popup login...");
+        await signInWithPopup(auth, provider);
+        // Il successo qui verrà gestito da onAuthStateChanged
+    } catch (err) {
+        console.warn("Popup failed or blocked, trying redirect:", err.code);
+        if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request' ||
+            err.code === 'auth/popup-closed-by-user' || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+            try {
+                console.log("Starting redirect login as fallback...");
                 await signInWithRedirect(auth, provider);
-            } else {
-                alert("Errore login: " + err.message);
+            } catch (redirErr) {
+                alert("Errore avvio login (redirect): " + redirErr.message);
             }
+        } else if (err.code !== 'auth/cancelled-popup-request') {
+            alert("Errore login: " + err.message);
         }
     }
 });
