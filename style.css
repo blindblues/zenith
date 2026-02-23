@@ -1039,6 +1039,10 @@ body {
         height: auto;
     }
 
+    body.no-scroll {
+        overflow: hidden;
+    }
+
     #app {
         flex-direction: column;
         height: auto;
@@ -1060,7 +1064,8 @@ body {
         height: 100vh;
         height: 100dvh;
         width: 280px;
-        transition: left 0.3s ease;
+        transition: left 0.3s ease, visibility 0.3s;
+        visibility: hidden;
         box-shadow: none;
         z-index: 50;
         overflow-y: auto;
@@ -1068,6 +1073,7 @@ body {
 
     .sidebar.open {
         left: 0;
+        visibility: visible;
         box-shadow: var(--shadow-lg);
     }
 

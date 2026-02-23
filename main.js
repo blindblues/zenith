@@ -481,6 +481,44 @@ function setupProjectTouchDrag(handle, li, project, index) {
         }, delay);
     }, { passive: false });
 
+    const endTouch = async (e) => {
+        clearTimeout(projectTouchState.timer);
+        if (!projectTouchState.active) return;
+
+        const touch = e.changedTouches ? e.changedTouches[0] : e;
+        let targetId = null;
+        let insertBefore = true;
+
+        document.querySelectorAll('.project-item').forEach(item => {
+            item.classList.remove('drag-insert-above', 'drag-insert-below');
+            if (item.dataset.id === projectTouchState.projectId) return;
+
+            const rect = item.getBoundingClientRect();
+            if (touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+                targetId = item.dataset.id;
+                const midY = rect.top + rect.height / 2;
+                insertBefore = touch.clientY < midY;
+            }
+        });
+
+        if (targetId && projectTouchState.projectId) {
+            await reorderProjects(projectTouchState.projectId, targetId, insertBefore);
+        }
+
+        if (projectTouchState.clone) projectTouchState.clone.remove();
+        li.classList.remove('project-dragging');
+        projectTouchState = { active: false, projectId: null, clone: null, timer: null };
+    };
+
+    li.addEventListener('touchend', endTouch);
+    li.addEventListener('touchcancel', () => {
+        clearTimeout(projectTouchState.timer);
+        document.querySelectorAll('.project-item').forEach(item => item.classList.remove('drag-insert-above', 'drag-insert-below'));
+        if (projectTouchState.clone) projectTouchState.clone.remove();
+        li.classList.remove('project-dragging');
+        projectTouchState = { active: false, projectId: null, clone: null, timer: null };
+    });
+
     handle.addEventListener('touchmove', (e) => {
         if (!projectTouchState.active) return;
         e.preventDefault();
@@ -506,43 +544,6 @@ function setupProjectTouchDrag(handle, li, project, index) {
             }
         });
     }, { passive: false });
-
-    handle.addEventListener('touchend', async (e) => {
-        clearTimeout(projectTouchState.timer);
-        if (!projectTouchState.active) return;
-
-        const touch = e.changedTouches[0];
-        let targetId = null;
-        let insertBefore = true;
-
-        document.querySelectorAll('.project-item').forEach(item => {
-            item.classList.remove('drag-insert-above', 'drag-insert-below');
-            if (item.dataset.id === projectTouchState.projectId) return;
-
-            const rect = item.getBoundingClientRect();
-            if (touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
-                targetId = item.dataset.id;
-                const midY = rect.top + rect.height / 2;
-                insertBefore = touch.clientY < midY;
-            }
-        });
-
-        if (targetId && projectTouchState.projectId) {
-            await reorderProjects(projectTouchState.projectId, targetId, insertBefore);
-        }
-
-        if (projectTouchState.clone) projectTouchState.clone.remove();
-        li.classList.remove('project-dragging');
-        projectTouchState = { active: false, projectId: null, clone: null, timer: null };
-    });
-
-    handle.addEventListener('touchcancel', () => {
-        clearTimeout(projectTouchState.timer);
-        document.querySelectorAll('.project-item').forEach(item => item.classList.remove('drag-insert-above', 'drag-insert-below'));
-        if (projectTouchState.clone) projectTouchState.clone.remove();
-        li.classList.remove('project-dragging');
-        projectTouchState = { active: false, projectId: null, clone: null, timer: null };
-    });
 }
 
 async function reorderProjects(draggedId, targetId, insertBefore = true) {
@@ -1233,11 +1234,13 @@ const sidebar = document.getElementById('sidebar');
 function openSidebar() {
     sidebar.classList.add('open');
     sidebarOverlay.classList.add('active');
+    document.body.classList.add('no-scroll');
 }
 
 function closeSidebar() {
     sidebar.classList.remove('open');
     sidebarOverlay.classList.remove('active');
+    document.body.classList.remove('no-scroll');
 }
 
 mobileMenuBtn.addEventListener('click', openSidebar);
