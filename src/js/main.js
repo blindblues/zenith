@@ -1428,8 +1428,10 @@ startupBtns.forEach(btn => {
 });
 
 // Chiudi modal cliccando fuori
-window.addEventListener('click', (e) => {
-    if (e.target === settingsModal) settingsModal.classList.remove('active');
-    if (e.target === projectModal) projectModal.classList.remove('active');
-    if (e.target === taskModal) taskModal.classList.remove('active');
+['click', 'touchstart'].forEach(evt => {
+    window.addEventListener(evt, (e) => {
+        if (e.target === settingsModal) settingsModal.classList.remove('active');
+        if (e.target === projectModal) projectModal.classList.remove('active');
+        if (e.target === taskModal) taskModal.classList.remove('active');
+    });
 });
