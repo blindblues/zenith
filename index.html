@@ -228,16 +228,21 @@
                 <input type="text" id="task-title-input" placeholder="Titolo della task..." autofocus>
                 <textarea id="task-desc-input" placeholder="Descrizione (opzionale)"></textarea>
 
-                <div class="checklist-container">
-                    <h4>Checklist</h4>
-                    <div id="checklist-items" class="checklist-items">
-                        <!-- Checklist items will be injected here -->
+                <div class="checklist-container" id="checklist-container">
+                    <div class="checklist-header" id="checklist-toggle">
+                        <i data-lucide="chevron-right" class="toggle-icon"></i>
+                        <h4>Checklist</h4>
                     </div>
-                    <div class="add-checklist-item">
-                        <input type="text" id="new-checklist-item-input" placeholder="Aggiungi azione...">
-                        <button id="add-checklist-item-btn" class="icon-btn" title="Aggiungi">
-                            <i data-lucide="plus"></i>
-                        </button>
+                    <div class="checklist-content">
+                        <div id="checklist-items" class="checklist-items">
+                            <!-- Checklist items will be injected here -->
+                        </div>
+                        <div class="add-checklist-item">
+                            <input type="text" id="new-checklist-item-input" placeholder="Aggiungi azione...">
+                            <button id="add-checklist-item-btn" class="icon-btn" title="Aggiungi">
+                                <i data-lucide="plus"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-actions">

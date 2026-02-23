@@ -136,6 +136,8 @@ const projectModalTitle = document.getElementById('project-modal-title');
 const checklistItemsContainer = document.getElementById('checklist-items');
 const newChecklistItemInput = document.getElementById('new-checklist-item-input');
 const addChecklistItemBtn = document.getElementById('add-checklist-item-btn');
+const checklistContainer = document.getElementById('checklist-container');
+const checklistToggle = document.getElementById('checklist-toggle');
 
 // Initialize Lucide Icons
 function initIcons() {
@@ -1237,6 +1239,12 @@ addTaskBtn.addEventListener('click', openAddTaskModal);
 if (mobileAddTaskBtn) mobileAddTaskBtn.addEventListener('click', openAddTaskModal);
 
 // --- CHECKLIST LOGIC ---
+if (checklistToggle) {
+    checklistToggle.addEventListener('click', () => {
+        checklistContainer.classList.toggle('expanded');
+    });
+}
+
 function renderModalChecklist() {
     checklistItemsContainer.innerHTML = '';
     state.currentChecklist.forEach((item, index) => {
@@ -1289,6 +1297,7 @@ function openAddTaskModal() {
     taskDescInput.value = '';
     state.currentChecklist = [];
     renderModalChecklist();
+    checklistContainer.classList.remove('expanded');
     taskModal.classList.add('active');
     setTimeout(() => taskTitleInput.focus(), 50);
 }
@@ -1301,6 +1310,8 @@ function openEditTaskModal(task) {
     taskDescInput.value = task.description || '';
     state.currentChecklist = task.checklist ? JSON.parse(JSON.stringify(task.checklist)) : [];
     renderModalChecklist();
+    // Se ci sono già item, magari vogliamo aprirlo? No, l'utente ha chiesto che sia nascosto "quando lo apro"
+    checklistContainer.classList.remove('expanded');
     taskModal.classList.add('active');
     setTimeout(() => taskTitleInput.focus(), 50);
 }
