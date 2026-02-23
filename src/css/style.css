@@ -892,6 +892,155 @@ body {
     gap: 0.75rem;
 }
 
+/* Checklist Styles */
+.checklist-container {
+    margin-bottom: var(--space-lg);
+    border-top: 1px solid var(--border-color);
+    padding-top: var(--space-md);
+}
+
+.checklist-container h4 {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: var(--space-sm);
+    display: block;
+}
+
+.checklist-items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: var(--space-md);
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.checklist-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.4rem 0.5rem;
+    background: var(--bg-app);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    transition: all 0.2s;
+}
+
+.checklist-item:hover {
+    border-color: var(--primary-medium);
+}
+
+.checklist-item input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--primary);
+    border-radius: 50%;
+    margin: 0;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    background: transparent;
+    flex-shrink: 0;
+}
+
+.checklist-item input[type="checkbox"]:checked {
+    background: var(--primary);
+}
+
+.checklist-item input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -60%) rotate(45deg);
+    width: 5px;
+    height: 9px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+}
+
+.checklist-item span {
+    flex: 1;
+    font-size: 0.85rem;
+    color: var(--text-main);
+    transition: all 0.2s;
+}
+
+.checklist-item.completed span {
+    text-decoration: line-through;
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+.add-checklist-item {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.add-checklist-item input {
+    margin-bottom: 0 !important;
+    flex: 1;
+}
+
+/* Stile per i checkbox nelle card */
+.task-checklist-preview {
+    margin-top: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    border-top: 1px dashed var(--border-color);
+    padding-top: 0.6rem;
+}
+
+.preview-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+}
+
+.preview-item input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--primary);
+    border-radius: 50%;
+    margin: 0;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    background: transparent;
+    flex-shrink: 0;
+}
+
+.preview-item input[type="checkbox"]:checked {
+    background: var(--primary);
+}
+
+.preview-item input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -60%) rotate(45deg);
+    width: 4px;
+    height: 7px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+}
+
+.preview-item span {
+    color: var(--text-secondary);
+}
+
+.preview-item.completed span {
+    text-decoration: line-through;
+    color: var(--text-muted);
+}
+
 /* ===================== ANIMATIONS ===================== */
 .fade-in {
     animation: fadeIn 0.3s ease-out;

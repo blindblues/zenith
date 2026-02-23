@@ -70,7 +70,8 @@ let state = {
     currentUser: null,
     projects: [],
     activeProjectId: localStorage.getItem('zenith_active_project') || null,
-    startupMode: localStorage.getItem('zenith_startup_mode') || 'last' // 'last' or 'first'
+    startupMode: localStorage.getItem('zenith_startup_mode') || 'last',
+    currentChecklist: [] // Stato temporaneo per il modale task
 };
 
 let isInitialProjectsLoad = true;
@@ -130,6 +131,11 @@ const taskEditId = document.getElementById('task-edit-id');
 const taskModalTitle = document.getElementById('task-modal-title');
 const projectEditId = document.getElementById('project-edit-id');
 const projectModalTitle = document.getElementById('project-modal-title');
+
+// Checklist Selectors
+const checklistItemsContainer = document.getElementById('checklist-items');
+const newChecklistItemInput = document.getElementById('new-checklist-item-input');
+const addChecklistItemBtn = document.getElementById('add-checklist-item-btn');
 
 // Initialize Lucide Icons
 function initIcons() {
@@ -670,6 +676,16 @@ function createTaskElement(task, priority) {
                 <button class="icon-btn edit-task-btn" data-id="${task.id}" title="Modifica Task"><i data-lucide="pencil"></i></button>
                 <button class="icon-btn delete-btn" data-id="${task.id}" title="Elimina Task"><i data-lucide="trash-2"></i></button>
             </div>
+            ${task.checklist && task.checklist.length > 0 ? `
+            <div class="task-checklist-preview">
+                ${task.checklist.map((item, idx) => `
+                    <div class="preview-item ${item.completed ? 'completed' : ''}">
+                        <input type="checkbox" ${item.completed ? 'checked' : ''} data-task-id="${task.id}" data-idx="${idx}" class="task-card-checkbox">
+                        <span>${item.text}</span>
+                    </div>
+                `).join('')}
+            </div>
+            ` : ''}
         </div>
     `;
 
@@ -739,6 +755,19 @@ function createTaskElement(task, priority) {
     if (nextBtn) nextBtn.addEventListener('click', () => moveTask(task.id, 'next'));
     const prevBtn = div.querySelector('.move-prev');
     if (prevBtn) prevBtn.addEventListener('click', () => moveTask(task.id, 'prev'));
+
+    // Checklist toggles nelle card
+    div.querySelectorAll('.task-card-checkbox').forEach(chk => {
+        chk.addEventListener('click', async (e) => {
+            e.stopPropagation(); // Evita drag o altre azioni
+            const idx = parseInt(chk.dataset.idx);
+            const updatedChecklist = [...(task.checklist || [])];
+            updatedChecklist[idx].completed = chk.checked;
+
+            const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, task.id);
+            await updateDoc(taskRef, { checklist: updatedChecklist });
+        });
+    });
 
     // Touch drag and drop per mobile
     if ('ontouchstart' in window) {
@@ -1139,6 +1168,7 @@ addProjectBtn.addEventListener('click', () => {
     const deleteBtn = document.getElementById('delete-project-btn-modal');
     if (deleteBtn) deleteBtn.style.display = 'none';
     projectModal.classList.add('active');
+    setTimeout(() => projectNameInput.focus(), 50);
 });
 cancelProjectBtn.addEventListener('click', () => projectModal.classList.remove('active'));
 
@@ -1150,6 +1180,7 @@ function openRenameProjectModal(project) {
     const deleteBtn = document.getElementById('delete-project-btn-modal');
     if (deleteBtn) deleteBtn.style.display = 'block';
     projectModal.classList.add('active');
+    setTimeout(() => projectNameInput.focus(), 50);
 }
 
 const editActiveProjectBtn = document.getElementById('edit-active-project-btn');
@@ -1205,16 +1236,62 @@ saveProjectBtn.addEventListener('click', async () => {
 addTaskBtn.addEventListener('click', openAddTaskModal);
 if (mobileAddTaskBtn) mobileAddTaskBtn.addEventListener('click', openAddTaskModal);
 
+// --- CHECKLIST LOGIC ---
+function renderModalChecklist() {
+    checklistItemsContainer.innerHTML = '';
+    state.currentChecklist.forEach((item, index) => {
+        const div = document.createElement('div');
+        div.className = `checklist-item ${item.completed ? 'completed' : ''}`;
+        div.innerHTML = `
+            <input type="checkbox" ${item.completed ? 'checked' : ''}>
+            <span>${item.text}</span>
+            <button class="icon-btn remove-item-btn" title="Rimuovi">
+                <i data-lucide="x"></i>
+            </button>
+        `;
+
+        div.querySelector('input').addEventListener('change', (e) => {
+            state.currentChecklist[index].completed = e.target.checked;
+            renderModalChecklist();
+        });
+
+        div.querySelector('.remove-item-btn').addEventListener('click', () => {
+            state.currentChecklist.splice(index, 1);
+            renderModalChecklist();
+        });
+
+        checklistItemsContainer.appendChild(div);
+    });
+    initIcons();
+}
+
+addChecklistItemBtn.addEventListener('click', () => {
+    const text = newChecklistItemInput.value.trim();
+    if (text) {
+        state.currentChecklist.push({ text, completed: false });
+        newChecklistItemInput.value = '';
+        renderModalChecklist();
+    }
+});
+
+newChecklistItemInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        addChecklistItemBtn.click();
+    }
+});
+
 function openAddTaskModal() {
     taskModalTitle.innerText = 'Nuova Task';
     saveTaskBtn.innerText = 'Aggiungi';
     taskEditId.value = '';
     taskTitleInput.value = '';
     taskDescInput.value = '';
+    state.currentChecklist = [];
+    renderModalChecklist();
     taskModal.classList.add('active');
+    setTimeout(() => taskTitleInput.focus(), 50);
 }
-
-cancelTaskBtn.addEventListener('click', () => taskModal.classList.remove('active'));
 
 function openEditTaskModal(task) {
     taskModalTitle.innerText = 'Modifica Task';
@@ -1222,41 +1299,37 @@ function openEditTaskModal(task) {
     taskEditId.value = task.id;
     taskTitleInput.value = task.title;
     taskDescInput.value = task.description || '';
+    state.currentChecklist = task.checklist ? JSON.parse(JSON.stringify(task.checklist)) : [];
+    renderModalChecklist();
     taskModal.classList.add('active');
+    setTimeout(() => taskTitleInput.focus(), 50);
 }
 
 saveTaskBtn.addEventListener('click', async () => {
     const title = taskTitleInput.value.trim();
     const desc = taskDescInput.value.trim();
     const editId = taskEditId.value;
+    const checklist = state.currentChecklist;
 
     if (title && state.activeProjectId && db) {
         try {
             if (editId) {
-                // Modifica task esistente
                 const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, editId);
-                await updateDoc(taskRef, { title: title, description: desc });
+                await updateDoc(taskRef, { title, description: desc, checklist: checklist });
             } else {
-                // Crea nuova task - assegna order alla fine della colonna todo
                 const project = state.projects.find(p => p.id === state.activeProjectId);
                 const todoTasks = project?.tasks?.filter(t => t.status === 'todo') || [];
                 await addDoc(collection(db, `projects/${state.activeProjectId}/tasks`), {
-                    title: title,
-                    description: desc,
-                    status: 'todo',
-                    order: todoTasks.length,
-                    createdAt: serverTimestamp()
+                    title, description: desc, status: 'todo',
+                    order: todoTasks.length, createdAt: serverTimestamp(),
+                    checklist: checklist
                 });
             }
-            taskTitleInput.value = '';
-            taskDescInput.value = '';
-            taskEditId.value = '';
             taskModal.classList.remove('active');
-        } catch (e) {
-            console.error("Error saving task: ", e);
-        }
+        } catch (e) { console.error(e); }
     }
 });
+// -----------------------
 
 // Mobile Sidebar Toggle
 const mobileMenuBtn = document.getElementById('mobile-menu-btn');

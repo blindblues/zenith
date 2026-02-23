@@ -227,6 +227,19 @@
                 <input type="hidden" id="task-edit-id">
                 <input type="text" id="task-title-input" placeholder="Titolo della task..." autofocus>
                 <textarea id="task-desc-input" placeholder="Descrizione (opzionale)"></textarea>
+
+                <div class="checklist-container">
+                    <h4>Checklist</h4>
+                    <div id="checklist-items" class="checklist-items">
+                        <!-- Checklist items will be injected here -->
+                    </div>
+                    <div class="add-checklist-item">
+                        <input type="text" id="new-checklist-item-input" placeholder="Aggiungi azione...">
+                        <button id="add-checklist-item-btn" class="icon-btn" title="Aggiungi">
+                            <i data-lucide="plus"></i>
+                        </button>
+                    </div>
+                </div>
                 <div class="modal-actions">
                     <button id="cancel-task" class="btn">Annulla</button>
                     <button id="save-task" class="btn primary-btn">Aggiungi</button>
