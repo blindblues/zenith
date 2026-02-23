@@ -28,6 +28,11 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { firebaseConfig } from "./firebase-config.js";
 
+// Register GSAP Plugins
+if (window.gsap && window.Flip) {
+    gsap.registerPlugin(Flip);
+}
+
 // Initialize Firebase
 let db;
 let auth;
@@ -38,6 +43,16 @@ try {
         db = getFirestore(app);
         auth = getAuth(app);
         provider = new GoogleAuthProvider();
+
+        // Forza la persistenza locale (cruciale per iOS/Safari)
+        setPersistence(auth, browserLocalPersistence)
+            .then(() => {
+                console.log("Firebase Auth persistence set to local.");
+            })
+            .catch((error) => {
+                console.error("Error setting auth persistence:", error);
+            });
+
         console.log("Firebase initialized successfully. Auth Domain:", firebaseConfig.authDomain);
     } else {
         console.error("Configurazione Firebase mancante o errata in firebase-config.js");
@@ -54,8 +69,11 @@ try {
 let state = {
     currentUser: null,
     projects: [],
-    activeProjectId: localStorage.getItem('zenith_active_project') || null
+    activeProjectId: localStorage.getItem('zenith_active_project') || null,
+    startupMode: localStorage.getItem('zenith_startup_mode') || 'last' // 'last' or 'first'
 };
+
+let isInitialProjectsLoad = true;
 
 // Auth Selectors
 const authScreen = document.getElementById('auth-screen');
@@ -74,14 +92,22 @@ const settingsUserEmail = document.getElementById('settings-user-email');
 const settingsUserAvatar = document.getElementById('settings-user-avatar');
 const colorOptions = document.querySelectorAll('.color-option');
 const themeBtns = document.querySelectorAll('.theme-btn');
+const startupBtns = document.querySelectorAll('.startup-btn');
+const startupDescription = document.getElementById('startup-description');
 
 // Selectors
 const projectsList = document.getElementById('projects-list');
+const projectsCompletedList = document.getElementById('projects-completed-list');
+const completedSection = document.getElementById('completed-section');
 const activeProjectName = document.getElementById('active-project-name');
+const completeActiveProjectBtn = document.getElementById('complete-active-project-btn');
+const mobileCompleteProjectBtn = document.getElementById('mobile-complete-project-btn');
 const addTaskBtn = document.getElementById('add-task-btn');
+const mobileAddTaskBtn = document.getElementById('mobile-add-task-btn');
 const todoList = document.getElementById('todo-list');
 const inProgressList = document.getElementById('in-progress-list');
 const completedList = document.getElementById('completed-list');
+const screenFlashOverlay = document.getElementById('screen-flash-overlay');
 
 // Counts
 const todoCount = document.getElementById('todo-count');
@@ -164,6 +190,32 @@ async function applyColor(color, saveToCloud = true) {
     }
 }
 
+async function applyStartupMode(mode, saveToCloud = true) {
+    state.startupMode = mode;
+    localStorage.setItem('zenith_startup_mode', mode);
+    startupBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.startup === mode);
+    });
+
+    if (startupDescription) {
+        if (mode === 'last') {
+            startupDescription.innerText = "L'app si aprirà sull'ultimo progetto che hai visitato.";
+        } else {
+            startupDescription.innerText = "L'app aprirà sempre il primo progetto della tua lista.";
+        }
+    }
+
+    if (saveToCloud && state.currentUser) {
+        try {
+            await setDoc(doc(db, "userSettings", state.currentUser.uid), {
+                startupMode: mode
+            }, { merge: true });
+        } catch (e) {
+            console.error("Error saving startup mode to cloud:", e);
+        }
+    }
+}
+
 // Helper per generare variazioni di colore
 function adjustColor(hex, percent) {
     const num = parseInt(hex.replace('#', ''), 16),
@@ -184,8 +236,10 @@ function hexToRgba(hex, alpha) {
 // Carica preferenze salvate
 const savedTheme = localStorage.getItem('zenith_theme') || 'light';
 const savedColor = localStorage.getItem('zenith_primary_color') || '#009dff';
+const savedStartupMode = localStorage.getItem('zenith_startup_mode') || 'last';
 applyTheme(savedTheme);
 applyColor(savedColor);
+applyStartupMode(savedStartupMode);
 
 // Data Syncing with Firestore
 let projectsUnsubscribe = null;
@@ -220,13 +274,41 @@ function setupSync() {
         state.projects.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
 
         renderProjects();
-        if (state.activeProjectId) {
-            const activeProject = state.projects.find(p => p.id === state.activeProjectId);
-            if (activeProject) {
+
+        // Se ci sono progetti, gestiamo la selezione iniziale o aggiorniamo quella esistente
+        if (state.projects.length > 0) {
+            const activeProjectExists = state.projects.some(p => p.id === state.activeProjectId);
+
+            if (isInitialProjectsLoad) {
+                isInitialProjectsLoad = false;
+
+                if (state.startupMode === 'first' || !state.activeProjectId || !activeProjectExists) {
+                    // Modalità 'Primo' o selezione non valida: apri il primo progetto
+                    selectProject(state.projects[0].id);
+                } else {
+                    // Modalità 'Ultimo': apri quello esistente
+                    const activeProject = state.projects.find(p => p.id === state.activeProjectId);
+                    activeProjectName.innerText = activeProject.name;
+
+                    const isCompleted = !!activeProject.completed;
+                    addTaskBtn.disabled = isCompleted;
+                    if (mobileAddTaskBtn) mobileAddTaskBtn.disabled = isCompleted;
+                    updateCompleteBtnUI(isCompleted);
+
+                    syncTasks(state.activeProjectId);
+                }
+            } else if (state.activeProjectId && activeProjectExists) {
+                // Aggiornamento dati su progetto già attivo
+                const activeProject = state.projects.find(p => p.id === state.activeProjectId);
                 activeProjectName.innerText = activeProject.name;
-                addTaskBtn.disabled = false;
+
+                const isCompleted = !!activeProject.completed;
+                addTaskBtn.disabled = isCompleted;
+                if (mobileAddTaskBtn) mobileAddTaskBtn.disabled = isCompleted;
+                updateCompleteBtnUI(isCompleted);
+
+                syncTasks(state.activeProjectId);
             }
-            syncTasks(state.activeProjectId);
         }
     });
 }
@@ -267,101 +349,115 @@ function syncTasks(projectId) {
 // Render Projects List
 function renderProjects() {
     projectsList.innerHTML = '';
-    state.projects.forEach((project, index) => {
-        const li = document.createElement('li');
-        li.className = `project-item ${project.id === state.activeProjectId ? 'active' : ''}`;
-        li.draggable = true;
-        li.dataset.id = project.id;
-        li.dataset.index = index;
+    projectsCompletedList.innerHTML = '';
 
-        const priorityClass = index < 3 ? `priority-${index + 1}` : '';
+    // Filtriamo i progetti
+    const activeProjects = state.projects.filter(p => !p.completed);
+    const completedProjects = state.projects.filter(p => p.completed);
 
-        li.innerHTML = `
-            <div class="project-drag-handle" title="Trascina per riordinare">
-                <i data-lucide="grip-vertical"></i>
-            </div>
-            <div class="project-priority ${priorityClass}">${index + 1}</div>
-            <div class="project-link">
-                <span>${project.name}</span>
-            </div>
-            <div class="project-item-actions">
-                <button class="icon-btn rename-project-btn" data-id="${project.id}" title="Rinomina Progetto">
-                    <i data-lucide="pencil"></i>
-                </button>
-                <button class="icon-btn delete-project-btn" data-id="${project.id}" title="Elimina Progetto">
-                    <i data-lucide="x"></i>
-                </button>
-            </div>
-        `;
+    // Mostra/Nascondi sezione completati
+    if (completedSection) {
+        completedSection.style.display = completedProjects.length > 0 ? 'block' : 'none';
+    }
 
-        // Desktop drag events
-        li.addEventListener('dragstart', (e) => {
-            li.classList.add('project-dragging');
-            e.dataTransfer.setData('project/id', project.id);
-        });
+    // Render Attivi
+    activeProjects.forEach((project, index) => {
+        const li = createProjectLi(project, index, false);
+        projectsList.appendChild(li);
+    });
 
-        li.addEventListener('dragend', () => {
-            li.classList.remove('project-dragging');
-            document.querySelectorAll('.project-item').forEach(item => item.classList.remove('drag-over-project'));
-        });
+    // Render Completati
+    completedProjects.forEach((project, index) => {
+        const li = createProjectLi(project, index, true);
+        projectsCompletedList.appendChild(li);
+    });
 
-        li.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            document.querySelectorAll('.project-item').forEach(item => item.classList.remove('drag-insert-above', 'drag-insert-below'));
-            const rect = li.getBoundingClientRect();
-            const midY = rect.top + rect.height / 2;
-            if (e.clientY < midY) {
-                li.classList.add('drag-insert-above');
-            } else {
-                li.classList.add('drag-insert-below');
-            }
-        });
+    initIcons();
+}
 
-        li.addEventListener('dragleave', () => {
-            li.classList.remove('drag-insert-above', 'drag-insert-below');
-        });
+function createProjectLi(project, index, isCompleted) {
+    const li = document.createElement('li');
+    li.className = `project-item ${project.id === state.activeProjectId ? 'active' : ''} ${isCompleted ? 'completed-item' : ''}`;
+    li.draggable = !isCompleted;
+    li.dataset.id = project.id;
+    li.dataset.index = index;
 
-        li.addEventListener('drop', async (e) => {
-            e.preventDefault();
-            const rect = li.getBoundingClientRect();
-            const midY = rect.top + rect.height / 2;
-            const insertBefore = e.clientY < midY;
+    const priorityClass = !isCompleted && index < 3 ? `priority-${index + 1}` : '';
+    const priorityDisplay = isCompleted ? '<i data-lucide="check-circle" class="completed-check" style="width:14px;height:14px;"></i>' : (index + 1);
 
-            li.classList.remove('drag-insert-above', 'drag-insert-below');
-            document.querySelectorAll('.project-item').forEach(item => item.classList.remove('drag-insert-above', 'drag-insert-below'));
+    li.innerHTML = `
+        <div class="project-drag-handle" style="${isCompleted ? 'display:none' : ''}" title="Trascina per riordinare">
+            <i data-lucide="more-vertical"></i>
+        </div>
+        <div class="project-priority ${priorityClass}">${priorityDisplay}</div>
+        <div class="project-link">
+            <span>${project.name}</span>
+        </div>
+        <div class="project-item-actions">
+            <button class="icon-btn rename-project-btn" data-id="${project.id}" title="Rinomina Progetto" style="${isCompleted ? 'display:none' : ''}">
+                <i data-lucide="pencil"></i>
+            </button>
+            <button class="icon-btn delete-project-btn delete-btn" data-id="${project.id}" title="Elimina Progetto">
+                <i data-lucide="trash-2"></i>
+            </button>
+        </div>
+    `;
 
-            const draggedId = e.dataTransfer.getData('project/id');
-            if (draggedId && draggedId !== project.id) {
-                await reorderProjects(draggedId, project.id, insertBefore);
-            }
-        });
+    li.querySelector('.project-link').addEventListener('click', () => selectProject(project.id));
 
-        // Touch drag for mobile (sull'handle)
-        const handle = li.querySelector('.project-drag-handle');
-        setupProjectTouchDrag(handle, li, project, index);
-
-        li.querySelector('.project-link').addEventListener('click', () => selectProject(project.id));
+    if (!isCompleted) {
         li.querySelector('.rename-project-btn').addEventListener('click', (e) => {
             e.stopPropagation();
             openRenameProjectModal(project);
         });
-        li.querySelector('.delete-project-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            deleteProject(project.id);
+        // Desktop drag events
+        li.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('project/id', project.id);
+            li.classList.add('project-dragging');
         });
+        li.addEventListener('dragend', () => li.classList.remove('project-dragging'));
+        li.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const rect = li.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            li.classList.toggle('drag-insert-above', e.clientY < midY);
+            li.classList.toggle('drag-insert-below', e.clientY >= midY);
+        });
+        li.addEventListener('dragleave', () => li.classList.remove('drag-insert-above', 'drag-insert-below'));
+        li.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            li.classList.remove('drag-insert-above', 'drag-insert-below');
+            const draggedId = e.dataTransfer.getData('project/id');
+            if (draggedId && draggedId !== project.id) {
+                const rect = li.getBoundingClientRect();
+                const insertBefore = e.clientY < (rect.top + rect.height / 2);
+                await reorderProjects(draggedId, project.id, insertBefore);
+            }
+        });
+        // Touch handle
+        const handle = li.querySelector('.project-drag-handle');
+        setupProjectTouchDrag(handle, li, project, index);
+    }
 
-        projectsList.appendChild(li);
+    li.querySelector('.delete-project-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteProject(project.id);
     });
-    initIcons();
+
+    return li;
 }
 
 // Touch drag and drop per progetti
 let projectTouchState = { active: false, projectId: null, clone: null, timer: null };
 
 function setupProjectTouchDrag(handle, li, project, index) {
-    handle.addEventListener('touchstart', (e) => {
-        e.preventDefault();
+    li.addEventListener('touchstart', (e) => {
+        // Ignora pulsanti azione
+        if (e.target.closest('.icon-btn')) return;
+
         const touch = e.touches[0];
+        const isHandle = e.target.closest('.project-drag-handle');
+        const delay = isHandle ? 50 : 500;
 
         projectTouchState.timer = setTimeout(() => {
             projectTouchState.active = true;
@@ -377,13 +473,12 @@ function setupProjectTouchDrag(handle, li, project, index) {
             clone.style.left = li.getBoundingClientRect().left + 'px';
             clone.style.top = (touch.clientY - 20) + 'px';
             clone.style.boxShadow = '0 6px 20px rgba(0,168,255,0.3)';
-            clone.style.background = 'white';
             document.body.appendChild(clone);
             projectTouchState.clone = clone;
 
             li.classList.add('project-dragging');
             if (navigator.vibrate) navigator.vibrate(30);
-        }, 50);
+        }, delay);
     }, { passive: false });
 
     handle.addEventListener('touchmove', (e) => {
@@ -477,7 +572,15 @@ function selectProject(id) {
     const project = state.projects.find(p => p.id === id);
     if (project) {
         activeProjectName.innerText = project.name;
-        addTaskBtn.disabled = false;
+
+        // Configura il pulsante di completamento nella testata
+        const isCompleted = !!project.completed;
+        updateCompleteBtnUI(isCompleted);
+
+        // Se il progetto è completato, disattiva pulsanti "Nuova Task"
+        addTaskBtn.disabled = isCompleted;
+        if (mobileAddTaskBtn) mobileAddTaskBtn.disabled = isCompleted;
+
         renderProjects();
         syncTasks(id);
 
@@ -501,6 +604,9 @@ function renderTasks() {
     const project = state.projects.find(p => p.id === state.activeProjectId);
     if (!project || !project.tasks) return;
 
+    // Cattura lo stato attuale per l'animazione FLIP
+    const flipState = window.Flip ? Flip.getState(".task-card") : null;
+
     todoList.innerHTML = '';
     inProgressList.innerHTML = '';
     completedList.innerHTML = '';
@@ -521,28 +627,53 @@ function renderTasks() {
     completedCount.innerText = counts.completed;
 
     initIcons();
+
+    // Esegue l'animazione FLIP
+    if (flipState) {
+        Flip.from(flipState, {
+            duration: 0.5,
+            ease: "power2.inOut",
+            stagger: 0.05,
+            absolute: true, // Importante per movimenti fluidi tra colonne
+            onEnter: elements => gsap.fromTo(elements, { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.4 })
+        });
+    }
 }
 
 // Create Task Element
 function createTaskElement(task, priority) {
     const div = document.createElement('div');
-    div.className = 'task-card fade-in';
-    div.draggable = true;
+    const project = state.projects.find(p => p.id === state.activeProjectId);
+    const isProjectCompleted = !!project?.completed;
+
+    div.className = `task-card ${isProjectCompleted ? 'completed-view' : ''}`;
+    div.draggable = !isProjectCompleted;
     div.dataset.id = task.id;
     div.dataset.status = task.status;
+    div.setAttribute('data-flip-id', task.id); // Necessario per Flip
+
     div.innerHTML = `
-        <div class="task-header">
-            <span class="task-priority">${priority}</span>
-            <h4>${task.title}</h4>
+        <div class="task-drag-handle" style="${isProjectCompleted ? 'display:none' : ''}" title="Trascina per riordinare">
+            <i data-lucide="more-vertical"></i>
         </div>
-        ${task.description ? `<p>${task.description}</p>` : ''}
-        <div class="task-actions">
-            ${task.status !== 'todo' ? `<button class="task-move-btn move-prev" title="Sposta indietro"><i data-lucide="chevron-left"></i></button>` : ''}
-            ${task.status !== 'completed' ? `<button class="task-move-btn move-next" title="Sposta avanti"><i data-lucide="chevron-right"></i></button>` : ''}
-            <button class="icon-btn edit-task-btn" data-id="${task.id}" title="Modifica Task"><i data-lucide="pencil"></i></button>
-            <button class="icon-btn delete-btn" data-id="${task.id}" title="Elimina Task"><i data-lucide="trash-2"></i></button>
+        <div class="task-content-wrapper">
+            <div class="task-header">
+                <span class="task-priority">${priority}</span>
+                <h4>${task.title}</h4>
+            </div>
+            ${task.description ? `<p>${task.description}</p>` : ''}
+            <div class="task-actions" style="${isProjectCompleted ? 'display:none' : ''}">
+                ${task.status !== 'todo' ? `<button class="task-move-btn move-prev" title="Sposta indietro"><i data-lucide="chevron-left"></i></button>` : ''}
+                ${task.status !== 'completed' ? `<button class="task-move-btn move-next" title="Sposta avanti"><i data-lucide="chevron-right"></i></button>` : ''}
+                <button class="icon-btn edit-task-btn" data-id="${task.id}" title="Modifica Task"><i data-lucide="pencil"></i></button>
+                <button class="icon-btn delete-btn" data-id="${task.id}" title="Elimina Task"><i data-lucide="trash-2"></i></button>
+            </div>
         </div>
     `;
+
+    if (isProjectCompleted) {
+        return div;
+    }
 
     // Desktop drag events
     div.addEventListener('dragstart', (e) => {
@@ -688,11 +819,17 @@ let touchDragState = {
 
 function setupTouchDragOnCard(div, task) {
     div.addEventListener('touchstart', (e) => {
+        // Se si tocca un pulsante, non attivare il drag
         if (e.target.closest('button')) return;
 
         const touch = e.touches[0];
         touchDragState.startX = touch.clientX;
         touchDragState.startY = touch.clientY;
+
+        // Se tocca i 3 puntini (handle), attivazione "immediata". 
+        // Se tocca il resto della card, attivazione ritardata (long press).
+        const isHandle = e.target.closest('.task-drag-handle');
+        const delay = isHandle ? 50 : 550;
 
         touchDragState.timer = setTimeout(() => {
             touchDragState.active = true;
@@ -712,7 +849,7 @@ function setupTouchDragOnCard(div, task) {
 
             div.classList.add('dragging');
             if (navigator.vibrate) navigator.vibrate(30);
-        }, 80);
+        }, delay);
     }, { passive: true });
 
     div.addEventListener('touchmove', (e) => {
@@ -808,10 +945,17 @@ function setupTouchDragOnCard(div, task) {
             if (targetColumn && touchDragState.taskId && db) {
                 const newStatus = targetColumn.dataset.status;
                 const project = state.projects.find(p => p.id === state.activeProjectId);
-                const columnTasks = project?.tasks?.filter(t => t.status === newStatus) || [];
-                const newOrder = columnTasks.length;
-                const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, touchDragState.taskId);
-                await updateDoc(taskRef, { status: newStatus, order: newOrder });
+                const draggedTask = project?.tasks?.find(t => t.id === touchDragState.taskId);
+
+                // Sposta alla fine solo se cambiamo colonna.
+                // Se rilasciamo nella stessa colonna senza colpire una task specifica, non facciamo nulla.
+                if (draggedTask && draggedTask.status !== newStatus) {
+                    const columnTasks = project?.tasks?.filter(t => t.status === newStatus) || [];
+                    const newOrder = columnTasks.length;
+
+                    const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, touchDragState.taskId);
+                    await updateDoc(taskRef, { status: newStatus, order: newOrder });
+                }
             }
         }
 
@@ -861,6 +1005,79 @@ async function moveTask(taskId, direction) {
         await updateDoc(taskRef, { status: newStatus, order: newOrder });
     }
 }
+
+async function toggleProjectComplete(projectId, isCompleted) {
+    if (!db) return;
+    try {
+        const projectRef = doc(db, "projects", projectId);
+        await updateDoc(projectRef, { completed: isCompleted });
+
+        // Se stiamo modificando il progetto attivo, aggiorniamo la UI
+        if (state.activeProjectId === projectId) {
+            addTaskBtn.disabled = isCompleted;
+            if (mobileAddTaskBtn) mobileAddTaskBtn.disabled = isCompleted;
+
+            // Abilita/Disabilita tasto di completamento mobile
+            if (completeActiveProjectBtn) completeActiveProjectBtn.disabled = isCompleted;
+            if (mobileCompleteProjectBtn) mobileCompleteProjectBtn.disabled = isCompleted;
+
+            updateCompleteBtnUI(isCompleted);
+
+            // Trigger feedback visivo su mobile (cornice che si illumina)
+            if (window.innerWidth <= 768 && screenFlashOverlay) {
+                screenFlashOverlay.classList.remove('animate');
+                void screenFlashOverlay.offsetWidth; // trigger reflow
+                screenFlashOverlay.classList.add('animate');
+            }
+        }
+    } catch (e) {
+        console.error("Error toggling project complete: ", e);
+    }
+}
+
+function updateCompleteBtnUI(isCompleted) {
+    const btns = [completeActiveProjectBtn, mobileCompleteProjectBtn];
+
+    btns.forEach(btn => {
+        if (!btn) return;
+        btn.style.display = 'inline-flex';
+        btn.disabled = false;
+
+        const span = btn.querySelector('span');
+        let icon = btn.querySelector('i') || btn.querySelector('svg');
+
+        if (isCompleted) {
+            if (span) span.innerText = 'Ripristina';
+            btn.title = 'Sblocca progetto per modifiche';
+            if (icon) {
+                // Sostituiamo l'elemento per assicurarci che Lucide lo rielabori
+                const newIcon = document.createElement('i');
+                newIcon.setAttribute('data-lucide', 'rotate-cw');
+                icon.replaceWith(newIcon);
+            }
+        } else {
+            if (span) span.innerText = 'Archivia';
+            btn.title = 'Segna come completato e archivia';
+            if (icon) {
+                const newIcon = document.createElement('i');
+                newIcon.setAttribute('data-lucide', 'check-circle');
+                icon.replaceWith(newIcon);
+            }
+        }
+    });
+    initIcons();
+}
+
+// Listeners per i pulsanti di completamento
+const handleCompleteClick = () => {
+    const project = state.projects.find(p => p.id === state.activeProjectId);
+    if (project) {
+        toggleProjectComplete(project.id, !project.completed);
+    }
+};
+
+if (completeActiveProjectBtn) completeActiveProjectBtn.addEventListener('click', handleCompleteClick);
+if (mobileCompleteProjectBtn) mobileCompleteProjectBtn.addEventListener('click', handleCompleteClick);
 
 async function deleteTask(taskId) {
     if (!db) return;
@@ -944,14 +1161,18 @@ saveProjectBtn.addEventListener('click', async () => {
 });
 
 // Modal Logic - Task
-addTaskBtn.addEventListener('click', () => {
+addTaskBtn.addEventListener('click', openAddTaskModal);
+if (mobileAddTaskBtn) mobileAddTaskBtn.addEventListener('click', openAddTaskModal);
+
+function openAddTaskModal() {
     taskModalTitle.innerText = 'Nuova Task';
     saveTaskBtn.innerText = 'Aggiungi';
     taskEditId.value = '';
     taskTitleInput.value = '';
     taskDescInput.value = '';
     taskModal.classList.add('active');
-});
+}
+
 cancelTaskBtn.addEventListener('click', () => taskModal.classList.remove('active'));
 
 function openEditTaskModal(task) {
@@ -1031,138 +1252,139 @@ async function migrateLegacyProjects(userId) {
     }
 }
 
-// App Initiation / Auth
-document.addEventListener('DOMContentLoaded', async () => {
-    if (auth) {
-        console.log("Initializing Auth with Domain:", firebaseConfig.authDomain);
+// --- LOGICA AUTH SPOSTATA FUORI DA DOMCONTENTLOADED PER MASSIMA VELOCITÀ ---
+if (auth) {
+    // Monitoraggio stato utente
+    onAuthStateChanged(auth, async (user) => {
+        console.log("Auth state changed. User:", user ? user.email : "null");
 
-        // Monitoraggio stato utente
-        onAuthStateChanged(auth, async (user) => {
-            console.log("Auth state changed. User:", user ? user.email : "null");
+        if (user) {
+            state.currentUser = user;
 
-            if (user) {
-                state.currentUser = user;
+            // Aggiorna UI Profilo e stato App
+            userName.innerText = user.displayName || user.email;
+            if (user.photoURL) {
+                userAvatar.src = user.photoURL;
+                userAvatar.style.display = 'block';
+                settingsUserAvatar.src = user.photoURL;
+            }
+            settingsUserName.innerText = user.displayName || 'Utente Zenith';
+            settingsUserEmail.innerText = user.email;
 
-                // Aggiorna UI Profilo e stato App
-                userName.innerText = user.displayName || user.email;
-                if (user.photoURL) {
-                    userAvatar.src = user.photoURL;
-                    userAvatar.style.display = 'block';
-                    settingsUserAvatar.src = user.photoURL;
+            authScreen.style.display = 'none';
+            appScreen.style.display = 'flex';
+
+            // Sync data
+            await migrateLegacyProjects(user.uid);
+
+            // Carica preferenze utente da Firestore
+            try {
+                const settingsSnap = await getDoc(doc(db, "userSettings", user.uid));
+                if (settingsSnap.exists()) {
+                    const settings = settingsSnap.data();
+                    if (settings.theme) applyTheme(settings.theme, false);
+                    if (settings.primaryColor) applyColor(settings.primaryColor, false);
+                    if (settings.startupMode) applyStartupMode(settings.startupMode, false);
                 }
-                settingsUserName.innerText = user.displayName || 'Utente Zenith';
-                settingsUserEmail.innerText = user.email;
+            } catch (e) {
+                console.error("Error loading user settings:", e);
+            }
 
-                authScreen.style.display = 'none';
-                appScreen.style.display = 'flex';
+            setupSync();
+            setupDragAndDrop();
+            initIcons();
 
-                // Sync data
-                await migrateLegacyProjects(user.uid);
-
-                // Carica preferenze utente da Firestore
-                try {
-                    const settingsSnap = await getDoc(doc(db, "userSettings", user.uid));
-                    if (settingsSnap.exists()) {
-                        const settings = settingsSnap.data();
-                        if (settings.theme) applyTheme(settings.theme, false);
-                        if (settings.primaryColor) applyColor(settings.primaryColor, false);
-                    }
-                } catch (e) {
-                    console.error("Error loading user settings:", e);
-                }
-
-                setupSync();
-                setupDragAndDrop();
-                initIcons();
-
-                // Animazioni
+            // Animazioni (solo se l'app è appena apparsa)
+            if (appScreen.style.display === 'flex') {
                 if (window.innerWidth > 768) {
                     gsap.from('.sidebar', { x: -50, opacity: 0, duration: 0.8, ease: 'power3.out' });
                 }
                 gsap.from('.top-bar', { y: -20, opacity: 0, duration: 0.8, delay: 0.1, ease: 'power3.out' });
-
-            } else {
-                state.currentUser = null;
-                authScreen.style.display = 'flex';
-                appScreen.style.display = 'none';
-                if (projectsUnsubscribe) projectsUnsubscribe();
-                if (tasksUnsubscribe) tasksUnsubscribe();
             }
-        });
 
-        // Gestione Risultato Redirect (Mobile)
+        } else {
+            state.currentUser = null;
+            authScreen.style.display = 'flex';
+            appScreen.style.display = 'none';
+            if (projectsUnsubscribe) projectsUnsubscribe();
+            if (tasksUnsubscribe) tasksUnsubscribe();
+        }
+    });
+
+    // Gestione Risultato Redirect (Mobile)
+    getRedirectResult(auth).then((result) => {
+        if (result) {
+            console.log("Redirect login successful:", result.user.email);
+        }
+    }).catch((error) => {
+        console.error("Error getting redirect result:", error);
+        // Su iOS Safari, a volte fallisce per restrizioni cross-site o cookie bloccati
+        if (error.code === 'auth/web-storage-unsupported' || error.code === 'auth/operation-not-supported-in-this-environment') {
+            const msg = "Il tuo browser blocca l'accesso ai dati di login. \nAssicurati di non essere in modalità Privata e di aver disabilitato 'Blocca tutti i cookie' o 'Impedisci tracking tra siti' nelle impostazioni di Safari.";
+            alert(msg);
+        }
+    });
+}
+
+// Pulsante Login
+loginBtn.addEventListener('click', async () => {
+    console.log("Login button clicked");
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+    if (isMobile) {
+        console.log("Starting redirect login...");
         try {
-            const result = await getRedirectResult(auth);
-            if (result) {
-                console.log("Redirect login successful:", result.user.email);
-            }
-        } catch (error) {
-            console.error("Error getting redirect result:", error);
-            if (error.code !== 'auth/web-storage-unsupported') {
-                alert("Errore durante il login: " + error.message);
+            await signInWithRedirect(auth, provider);
+        } catch (err) {
+            alert("Errore avvio login: " + err.message);
+        }
+    } else {
+        try {
+            console.log("Starting popup login...");
+            await signInWithPopup(auth, provider);
+        } catch (err) {
+            console.warn("Popup blocked or failed, falling back to redirect:", err.code);
+            if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request') {
+                await signInWithRedirect(auth, provider);
+            } else {
+                alert("Errore login: " + err.message);
             }
         }
-
-        // Pulsante Login - Approccio Robusto (Ripristinato)
-        loginBtn.addEventListener('click', async () => {
-            console.log("Login button clicked");
-            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
-            if (isMobile) {
-                console.log("Starting redirect login...");
-                try {
-                    await signInWithRedirect(auth, provider);
-                } catch (err) {
-                    alert("Errore avvio login: " + err.message);
-                }
-            } else {
-                try {
-                    console.log("Starting popup login...");
-                    await signInWithPopup(auth, provider);
-                } catch (err) {
-                    console.warn("Popup blocked or failed, falling back to redirect:", err.code);
-                    if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request') {
-                        await signInWithRedirect(auth, provider);
-                    } else {
-                        alert("Errore login: " + err.message);
-                    }
-                }
-            }
-        });
-
-        logoutBtn.addEventListener('click', () => {
-            signOut(auth).then(() => {
-                window.location.reload(); // Forza ricarica per pulire tutto
-            }).catch(err => console.error("Logout error:", err));
-        });
-
-        // Settings Modal Toggle
-        settingsBtn.addEventListener('click', () => {
-            settingsModal.classList.add('active');
-            initIcons();
-        });
-
-        closeSettingsBtn.addEventListener('click', () => {
-            settingsModal.classList.remove('active');
-        });
-
-        // Color Selection
-        colorOptions.forEach(btn => {
-            btn.addEventListener('click', () => applyColor(btn.dataset.color));
-        });
-
-        // Theme Selection
-        themeBtns.forEach(btn => {
-            btn.addEventListener('click', () => applyTheme(btn.dataset.theme));
-        });
-
-        // Chiudi modal cliccando fuori
-        window.addEventListener('click', (e) => {
-            if (e.target === settingsModal) settingsModal.classList.remove('active');
-        });
-    } else {
-        setupSync();
-        setupDragAndDrop();
-        initIcons();
     }
+});
+
+logoutBtn.addEventListener('click', () => {
+    signOut(auth).then(() => {
+        window.location.reload(); // Forza ricarica per pulire tutto
+    }).catch(err => console.error("Logout error:", err));
+});
+
+// Settings Modal Toggle
+settingsBtn.addEventListener('click', () => {
+    settingsModal.classList.add('active');
+    initIcons();
+});
+
+closeSettingsBtn.addEventListener('click', () => {
+    settingsModal.classList.remove('active');
+});
+
+// Color Selection
+colorOptions.forEach(btn => {
+    btn.addEventListener('click', () => applyColor(btn.dataset.color));
+});
+
+// Theme Selection
+themeBtns.forEach(btn => {
+    btn.addEventListener('click', () => applyTheme(btn.dataset.theme));
+});
+
+// Startup Mode Selection
+startupBtns.forEach(btn => {
+    btn.addEventListener('click', () => applyStartupMode(btn.dataset.startup));
+});
+
+// Chiudi modal cliccando fuori
+window.addEventListener('click', (e) => {
+    if (e.target === settingsModal) settingsModal.classList.remove('active');
 });

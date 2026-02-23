@@ -167,6 +167,8 @@ body {
     margin-bottom: 2px;
     padding: 4px 6px;
     font-size: 0.88rem;
+    min-height: 40px;
+    /* Altezza uniforme garantita */
 }
 
 .project-drag-handle {
@@ -297,6 +299,11 @@ body {
     object-fit: cover;
 }
 
+.sidebar-footer {
+    margin-top: auto;
+    padding-top: 2rem;
+}
+
 .user-info {
     flex: 1;
     display: flex;
@@ -355,8 +362,9 @@ body {
 }
 
 .project-link span {
-    white-space: normal;
-    overflow-wrap: break-word;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     line-height: 1.3;
 }
 
@@ -374,14 +382,43 @@ body {
 }
 
 .project-item:hover {
+    transition: background 0.2s, transform 0.15s;
+    user-select: none;
+}
+
+.project-item.completed-item {
+    opacity: 0.55;
+    background: transparent;
+    border: 1px dashed var(--border-color);
+}
+
+.project-item.completed-item:hover {
+    opacity: 0.8;
+    background: var(--bg-app);
+}
+
+.project-item.completed-item.active {
+    opacity: 0.9;
+    border-style: solid;
     background-color: var(--primary-light);
-    color: var(--primary);
+}
+
+.project-item.completed-item .project-priority {
+    background: var(--bg-app);
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    box-shadow: none;
+}
+
+.completed-check {
+    opacity: 0.7;
+    stroke-width: 1.5px;
 }
 
 .project-item.active {
-    background-color: var(--primary-medium);
-    color: var(--primary);
-    font-weight: 600;
+    background-color: var(--primary-light);
+    border-color: var(--primary-medium);
+    transform: translateX(4px);
 }
 
 .project-item i {
@@ -403,6 +440,12 @@ body {
     justify-content: space-between;
     align-items: center;
     margin-bottom: var(--space-xl);
+}
+
+.user-actions {
+    display: flex;
+    gap: 1rem;
+    /* Spazio tra Nuova Task e Completa su desktop */
 }
 
 #active-project-name {
@@ -496,25 +539,65 @@ body {
 /* ===================== TASK CARD ===================== */
 .task-card {
     background: var(--bg-card);
-    padding: var(--space-md);
+    padding: 0;
+    /* Padding gestito internamente */
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-sm);
     border: 1px solid var(--border-color);
     cursor: grab;
+    /* Ripristinato per desktop */
     transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s, border-color 0.15s;
     position: relative;
     user-select: none;
+    display: flex;
+}
+
+.task-drag-handle {
+    display: none;
+    /* Nascosto su desktop */
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    background: var(--border-light);
+    color: var(--text-light);
+    cursor: grab;
+    transition: all 0.2s;
+    border-right: 1px solid var(--border-color);
+    border-top-left-radius: var(--radius-md);
+    border-bottom-left-radius: var(--radius-md);
+}
+
+.task-card:hover .task-drag-handle {
+    background: var(--primary-light);
+    color: var(--primary);
+}
+
+.task-drag-handle i {
+    width: 14px;
+    height: 14px;
+}
+
+.task-content-wrapper {
+    flex: 1;
+    padding: var(--space-md);
 }
 
 .task-card:hover {
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-md);
-    border-color: #cbd5e1;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+    user-select: none;
+}
+
+/* Modalità visualizzazione per progetti completati */
+.task-card.completed-view {
+    opacity: 0.85;
+    background: var(--border-light);
+    border: 1px dashed var(--text-light);
+    cursor: default !important;
 }
 
 .task-card.dragging {
-    opacity: 0.3;
-    cursor: grabbing;
+    opacity: 0.5;
+    transform: scale(0.95) rotate(-1deg);
 }
 
 .task-card h4 {
@@ -618,6 +701,17 @@ body {
     box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3);
 }
 
+.btn.secondary-btn {
+    color: var(--primary);
+    border-color: var(--primary-medium);
+    background: var(--primary-light);
+}
+
+.btn.secondary-btn:hover:not(:disabled) {
+    background: var(--primary-medium);
+    border-color: var(--primary);
+}
+
 .btn.primary-btn:hover:not(:disabled) {
     background: var(--primary-dark);
     box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
@@ -641,9 +735,46 @@ body {
     transition: all 0.15s;
 }
 
+.fab-btn {
+    display: none;
+    /* Nascosto su desktop */
+}
+
 .icon-btn:hover {
     background: var(--primary-light);
     color: var(--primary);
+    transform: translateY(-1px);
+}
+
+.icon-btn-text {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 0.35rem 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-left: 1rem;
+}
+
+.icon-btn-text:hover {
+    background: var(--primary-light);
+    color: var(--primary);
+    border-color: var(--primary-medium);
+}
+
+.icon-btn-text i {
+    width: 16px;
+    height: 16px;
+}
+
+.fab-group {
+    display: none;
 }
 
 .edit-task-btn {
@@ -775,6 +906,7 @@ body {
 
 /* Touch Drag Clone */
 .touch-drag-clone {
+    background: var(--bg-card);
     border: 2px solid var(--primary) !important;
     box-shadow: 0 8px 25px rgba(59, 130, 246, 0.25) !important;
     transform: rotate(1.5deg) scale(1.02);
@@ -960,7 +1092,7 @@ body {
     }
 
     .user-actions {
-        width: 100%;
+        display: none;
     }
 
     .user-actions .btn {
@@ -988,12 +1120,74 @@ body {
         padding-bottom: 0.5rem;
     }
 
+
+    .task-drag-handle {
+        display: flex;
+        /* Visibile solo su mobile */
+    }
+
     .task-card {
-        padding: 0.75rem;
+        cursor: default;
+        /* Su mobile si usa solo l'handle */
     }
 
     .task-card h4 {
         font-size: 0.82rem;
+    }
+
+    /* Floating Action Buttons mobile */
+    .fab-group {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        /* Spazio rifinito tra i due FAB mobile */
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 2000;
+        align-items: center;
+    }
+
+    .fab-btn {
+        display: flex;
+        width: 58px;
+        height: 58px;
+        border-radius: 50%;
+        background-color: var(--primary) !important;
+        color: #ffffff !important;
+        border: none;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        opacity: 1 !important;
+        transition: transform 0.2s, background-color 0.2s, box-shadow 0.2s;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .fab-btn.secondary-fab {
+        width: 50px;
+        /* Leggermente più piccolo */
+        height: 50px;
+        background-color: var(--primary-light) !important;
+        color: var(--primary) !important;
+        border: 1px solid var(--primary-medium);
+    }
+
+    .fab-btn:active {
+        transform: scale(0.9) translateY(2px);
+    }
+
+    .fab-btn:disabled {
+        background-color: #94a3b8 !important;
+        opacity: 1 !important;
+        cursor: not-allowed;
+        box-shadow: none;
+    }
+
+    .fab-btn i {
+        width: 24px;
+        height: 24px;
     }
 
     .task-card p {
@@ -1125,7 +1319,8 @@ body {
     gap: 1rem;
 }
 
-.theme-btn {
+.theme-btn,
+.startup-btn {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -1140,14 +1335,27 @@ body {
     transition: all 0.2s;
 }
 
-.theme-btn.active {
+/* Eccezione: il pulsante "Chiaro" deve mantenere un aspetto chiaro anche in dark mode se NON è attivo */
+[data-theme="dark"] .theme-btn[data-theme="light"]:not(.active) {
+    background: #ffffff;
+    color: #1e293b;
+    border-color: #e2e8f0;
+}
+
+[data-theme="dark"] .theme-btn[data-theme="light"]:not(.active):hover {
+    background: #f8fafc;
+}
+
+.theme-btn.active,
+.startup-btn.active {
     border-color: var(--primary);
     background: var(--primary-light);
     color: var(--primary);
     box-shadow: 0 0 0 2px var(--primary);
 }
 
-.theme-btn i {
+.theme-btn i,
+.startup-btn i {
     width: 24px;
     height: 24px;
 }
@@ -1163,4 +1371,35 @@ body {
 
 .logout-danger-btn:hover {
     background: rgba(239, 68, 68, 0.1) !important;
+}
+
+/* ===================== ANIMATIONS & EFFECTS ===================== */
+.screen-flash {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 9999;
+    box-shadow: inset 0 0 0 0 transparent;
+    transition: none;
+}
+
+.screen-flash.animate {
+    animation: screenFlash 0.8s cubic-bezier(0.15, 0.85, 0.35, 1);
+}
+
+@keyframes screenFlash {
+    0% {
+        box-shadow: inset 0 0 0 0 transparent;
+    }
+
+    30% {
+        box-shadow: inset 0 0 0 6px var(--primary), 0 0 30px var(--primary);
+    }
+
+    100% {
+        box-shadow: inset 0 0 0 0 transparent;
+    }
 }
