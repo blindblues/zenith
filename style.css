@@ -108,8 +108,8 @@ body {
     width: 32px;
     height: 32px;
     background: linear-gradient(135deg, var(--primary), var(--accent));
-    mask: url('Zenith Logo.svg') no-repeat center;
-    -webkit-mask: url('Zenith Logo.svg') no-repeat center;
+    mask: url('Zenith Logo.svg?v=2.1.0') no-repeat center;
+    -webkit-mask: url('Zenith Logo.svg?v=2.1.0') no-repeat center;
     mask-size: contain;
     -webkit-mask-size: contain;
     flex-shrink: 0;
@@ -941,6 +941,17 @@ body {
     transform: translateX(-50%);
 }
 
+.mobile-logo .logo-icon-container {
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    mask: url('Zenith Logo.svg?v=2.1.0') no-repeat center;
+    -webkit-mask: url('Zenith Logo.svg?v=2.1.0') no-repeat center;
+    mask-size: contain;
+    -webkit-mask-size: contain;
+    flex-shrink: 0;
+}
+
 .mobile-logo span {
     font-size: 1.15rem;
     font-weight: 800;
@@ -1058,6 +1069,13 @@ body {
     .sidebar.open {
         left: 0;
         box-shadow: var(--shadow-lg);
+    }
+
+    /* Fix overlay visibility to ensure it blocks interactions */
+    .sidebar-overlay.active {
+        display: block;
+        z-index: 40;
+        /* Lower than sidebar but higher than content */
     }
 
     .top-bar {

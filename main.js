@@ -581,12 +581,19 @@ function selectProject(id) {
         addTaskBtn.disabled = isCompleted;
         if (mobileAddTaskBtn) mobileAddTaskBtn.disabled = isCompleted;
 
-        renderProjects();
-        syncTasks(id);
-
-        // Chiudi sidebar su mobile
+        // Chiudi sidebar su mobile IMMEDIATAMENTE per evitare overlap grafici
         if (window.innerWidth <= 768) {
             closeSidebar();
+            // Piccola attesa per lasciare che la sidebar inizi a chiudersi prima di iniettare nuove task
+            // Questo previene il "salto" grafico o la sidebar che rimane incastrata
+            setTimeout(() => {
+                renderProjects();
+                syncTasks(id);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }, 100);
+        } else {
+            renderProjects();
+            syncTasks(id);
         }
 
         gsap.from('.column', {
