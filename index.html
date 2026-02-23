@@ -132,8 +132,12 @@
         <!-- Main Content -->
         <main class="main-content">
             <header class="top-bar">
-                <div class="current-project-info">
+                <div class="current-project-info" style="display: flex; align-items: center; gap: 0.5rem;">
                     <h2 id="active-project-name"></h2>
+                    <button id="edit-active-project-btn" class="icon-btn" title="Modifica Progetto"
+                        style="display: none;">
+                        <i data-lucide="pencil"></i>
+                    </button>
                 </div>
                 <div class="user-actions">
                     <button id="add-task-btn" class="btn primary-btn" disabled>
@@ -204,9 +208,15 @@
                 <h3 id="project-modal-title">Crea Nuovo Progetto</h3>
                 <input type="hidden" id="project-edit-id">
                 <input type="text" id="project-name-input" placeholder="Nome progetto..." autofocus>
-                <div class="modal-actions">
-                    <button id="cancel-project" class="btn">Annulla</button>
-                    <button id="save-project" class="btn primary-btn">Crea</button>
+                <div class="modal-actions" style="justify-content: space-between; width: 100%;">
+                    <button id="delete-project-btn-modal" class="btn delete-btn"
+                        style="display: none; border-color: transparent;" title="Elimina Progetto">
+                        <i data-lucide="trash-2"></i>
+                    </button>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button id="cancel-project" class="btn">Annulla</button>
+                        <button id="save-project" class="btn primary-btn">Crea</button>
+                    </div>
                 </div>
             </div>
         </div>

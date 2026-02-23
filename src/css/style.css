@@ -108,8 +108,8 @@ body {
     width: 32px;
     height: 32px;
     background: linear-gradient(135deg, var(--primary), var(--accent));
-    mask: url('Zenith Logo.svg?v=2.1.0') no-repeat center;
-    -webkit-mask: url('Zenith Logo.svg?v=2.1.0') no-repeat center;
+    mask: url('../assets/Zenith Logo.svg?v=2.1.0') no-repeat center;
+    -webkit-mask: url('../assets/Zenith Logo.svg?v=2.1.0') no-repeat center;
     mask-size: contain;
     -webkit-mask-size: contain;
     flex-shrink: 0;
@@ -836,6 +836,8 @@ body {
     border-radius: var(--radius-lg);
     width: 100%;
     max-width: 420px;
+    max-height: 90vh;
+    overflow-y: auto;
     box-shadow: var(--shadow-lg);
     animation: modalIn 0.2s ease-out;
     border: 1px solid var(--border-color);
@@ -945,8 +947,8 @@ body {
     width: 28px;
     height: 28px;
     background: linear-gradient(135deg, var(--primary), var(--accent));
-    mask: url('Zenith Logo.svg?v=2.1.0') no-repeat center;
-    -webkit-mask: url('Zenith Logo.svg?v=2.1.0') no-repeat center;
+    mask: url('../assets/Zenith Logo.svg?v=2.1.0') no-repeat center;
+    -webkit-mask: url('../assets/Zenith Logo.svg?v=2.1.0') no-repeat center;
     mask-size: contain;
     -webkit-mask-size: contain;
     flex-shrink: 0;
@@ -1085,9 +1087,10 @@ body {
     }
 
     .top-bar {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 0.75rem;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
         margin-bottom: var(--space-md);
         padding-top: 0;
     }
@@ -1099,6 +1102,7 @@ body {
 
     .current-project-info {
         min-width: 0;
+        flex: 1;
     }
 
     #active-project-name {
@@ -1107,14 +1111,17 @@ body {
     }
 
     .user-actions {
-        display: none;
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
     }
 
-    .user-actions .btn {
-        width: 100%;
-        justify-content: center;
-        padding: 0.65rem;
-        font-size: 0.88rem;
+    #add-task-btn {
+        display: none !important;
+    }
+
+    #complete-active-project-btn {
+        margin-left: auto;
     }
 
     .kanban-board {
@@ -1193,6 +1200,10 @@ body {
         transform: scale(0.9) translateY(2px);
     }
 
+    #mobile-complete-project-btn {
+        display: none !important;
+    }
+
     .fab-btn:disabled {
         background-color: #94a3b8 !important;
         opacity: 1 !important;
@@ -1220,7 +1231,10 @@ body {
     .modal-content {
         margin: 1rem;
         max-width: calc(100vw - 2rem);
-        padding: var(--space-lg);
+        max-height: 70vh;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: var(--space-md);
     }
 
     .modal h3 {

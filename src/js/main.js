@@ -393,23 +393,11 @@ function createProjectLi(project, index, isCompleted) {
         <div class="project-link">
             <span>${project.name}</span>
         </div>
-        <div class="project-item-actions">
-            <button class="icon-btn rename-project-btn" data-id="${project.id}" title="Rinomina Progetto" style="${isCompleted ? 'display:none' : ''}">
-                <i data-lucide="pencil"></i>
-            </button>
-            <button class="icon-btn delete-project-btn delete-btn" data-id="${project.id}" title="Elimina Progetto">
-                <i data-lucide="trash-2"></i>
-            </button>
-        </div>
     `;
 
     li.querySelector('.project-link').addEventListener('click', () => selectProject(project.id));
 
     if (!isCompleted) {
-        li.querySelector('.rename-project-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            openRenameProjectModal(project);
-        });
         // Desktop drag events
         li.addEventListener('dragstart', (e) => {
             e.dataTransfer.setData('project/id', project.id);
@@ -438,11 +426,6 @@ function createProjectLi(project, index, isCompleted) {
         const handle = li.querySelector('.project-drag-handle');
         setupProjectTouchDrag(handle, li, project, index);
     }
-
-    li.querySelector('.delete-project-btn').addEventListener('click', (e) => {
-        e.stopPropagation();
-        deleteProject(project.id);
-    });
 
     return li;
 }
@@ -582,7 +565,6 @@ function selectProject(id) {
     if (project) {
         activeProjectName.innerText = project.name;
 
-        // Configura il pulsante di completamento nella testata
         const isCompleted = !!project.completed;
         updateCompleteBtnUI(isCompleted);
 
@@ -1089,6 +1071,12 @@ function updateCompleteBtnUI(isCompleted) {
             }
         }
     });
+
+    const editActiveProjectBtn = document.getElementById('edit-active-project-btn');
+    if (editActiveProjectBtn) {
+        editActiveProjectBtn.style.display = isCompleted ? 'none' : 'flex';
+    }
+
     initIcons();
 }
 
@@ -1144,16 +1132,41 @@ addProjectBtn.addEventListener('click', () => {
     saveProjectBtn.innerText = 'Crea';
     projectEditId.value = '';
     projectNameInput.value = '';
+    const deleteBtn = document.getElementById('delete-project-btn-modal');
+    if (deleteBtn) deleteBtn.style.display = 'none';
     projectModal.classList.add('active');
 });
 cancelProjectBtn.addEventListener('click', () => projectModal.classList.remove('active'));
 
 function openRenameProjectModal(project) {
-    projectModalTitle.innerText = 'Rinomina Progetto';
+    projectModalTitle.innerText = 'Modifica Progetto';
     saveProjectBtn.innerText = 'Salva';
     projectEditId.value = project.id;
     projectNameInput.value = project.name;
+    const deleteBtn = document.getElementById('delete-project-btn-modal');
+    if (deleteBtn) deleteBtn.style.display = 'block';
     projectModal.classList.add('active');
+}
+
+const editActiveProjectBtn = document.getElementById('edit-active-project-btn');
+if (editActiveProjectBtn) {
+    editActiveProjectBtn.addEventListener('click', () => {
+        const project = state.projects.find(p => p.id === state.activeProjectId);
+        if (project) {
+            openRenameProjectModal(project);
+        }
+    });
+}
+
+const deleteProjectBtnModal = document.getElementById('delete-project-btn-modal');
+if (deleteProjectBtnModal) {
+    deleteProjectBtnModal.addEventListener('click', () => {
+        const editId = projectEditId.value;
+        if (editId) {
+            deleteProject(editId);
+            projectModal.classList.remove('active');
+        }
+    });
 }
 
 saveProjectBtn.addEventListener('click', async () => {
@@ -1417,4 +1430,6 @@ startupBtns.forEach(btn => {
 // Chiudi modal cliccando fuori
 window.addEventListener('click', (e) => {
     if (e.target === settingsModal) settingsModal.classList.remove('active');
+    if (e.target === projectModal) projectModal.classList.remove('active');
+    if (e.target === taskModal) taskModal.classList.remove('active');
 });
