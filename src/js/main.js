@@ -1302,6 +1302,8 @@ function openAddTaskModal() {
     setTimeout(() => taskTitleInput.focus(), 50);
 }
 
+cancelTaskBtn.addEventListener('click', () => taskModal.classList.remove('active'));
+
 function openEditTaskModal(task) {
     taskModalTitle.innerText = 'Modifica Task';
     saveTaskBtn.innerText = 'Salva';
