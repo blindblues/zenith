@@ -1,0 +1,31 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Impostazioni Utente: ogni utente può leggere/scrivere solo il proprio documento
+    match /userSettings/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Progetti
+    match /projects/{projectId} {
+      // Un utente può accedere al progetto se è il proprietario (campo userId)
+      // Permettiamo il READ anche se il campo userId manca per supportare la migrazione legacy in main.js
+      allow read: if request.auth != null && (!('userId' in resource.data) || resource.data.userId == request.auth.uid);
+      
+      // Permettiamo update/delete solo se è il proprietario o se sta passando la migrazione
+      allow update, delete: if request.auth != null && (!('userId' in resource.data) || resource.data.userId == request.auth.uid);
+      
+      // Permettiamo la creazione solo se l'utente assegna se stesso come proprietario
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      
+      // Task (Sottocollezione di projects)
+      match /tasks/{taskId} {
+        // Un utente può leggere/scrivere le task se ha accesso al progetto padre
+        allow read, write: if request.auth != null && 
+          get(/databases/$(database)/documents/projects/$(projectId)).data.userId == request.auth.uid;
+      }
+    }
+  }
+}
