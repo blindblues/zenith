@@ -1381,6 +1381,13 @@ async function migrateLegacyProjects(userId) {
     }
 }
 
+// Mostra l'overlay di accesso sopra l'app e la rende non interattiva finché l'utente non è loggato
+function setAppLocked(locked) {
+    authScreen.style.display = locked ? 'flex' : 'none';
+    appScreen.inert = locked;
+    appScreen.setAttribute('aria-hidden', String(locked));
+}
+
 // --- LOGICA AUTH SPOSTATA FUORI DA DOMCONTENTLOADED PER MASSIMA VELOCITÀ ---
 if (auth) {
     // Monitoraggio stato utente
@@ -1400,8 +1407,8 @@ if (auth) {
             settingsUserName.innerText = user.displayName || 'Utente Zenith';
             settingsUserEmail.innerText = user.email;
 
-            authScreen.style.display = 'none';
-            appScreen.style.display = 'flex';
+            const wasLocked = appScreen.inert;
+            setAppLocked(false);
 
             // Sync data
             await migrateLegacyProjects(user.uid);
@@ -1424,7 +1431,7 @@ if (auth) {
             initIcons();
 
             // Animazioni (solo se l'app è appena apparsa)
-            if (appScreen.style.display === 'flex') {
+            if (wasLocked) {
                 if (window.innerWidth > 768) {
                     gsap.from('.sidebar', { x: -50, opacity: 0, duration: 0.8, ease: 'power3.out' });
                 }
@@ -1433,8 +1440,7 @@ if (auth) {
 
         } else {
             state.currentUser = null;
-            authScreen.style.display = 'flex';
-            appScreen.style.display = 'none';
+            setAppLocked(true);
             if (projectsUnsubscribe) projectsUnsubscribe();
             if (tasksUnsubscribe) tasksUnsubscribe();
         }
@@ -1445,10 +1451,7 @@ if (auth) {
         if (result && result.user) {
             console.log("Redirect login successful:", result.user.email);
             // Forza lo switch della UI se onAuthStateChanged dovesse ritardare su iOS
-            if (authScreen.style.display !== 'none') {
-                authScreen.style.display = 'none';
-                appScreen.style.display = 'flex';
-            }
+            setAppLocked(false);
         }
     }).catch((error) => {
         console.error("Error getting redirect result:", error);
