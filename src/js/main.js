@@ -13,6 +13,7 @@ import {
     setDoc,
     updateDoc,
     deleteDoc,
+    writeBatch,
     serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import {
@@ -71,10 +72,29 @@ let state = {
     projects: [],
     activeProjectId: localStorage.getItem('zenith_active_project') || null,
     startupMode: localStorage.getItem('zenith_startup_mode') || 'last',
-    currentChecklist: [] // Stato temporaneo per il modale task
+    currentChecklist: [], // Stato temporaneo per il modale task
+    tasks: [],            // Task del progetto attivo (separate dagli oggetti progetto, che vengono ricreati a ogni snapshot)
+    tasksProjectId: null  // Progetto a cui si riferiscono state.tasks
 };
 
 let isInitialProjectsLoad = true;
+
+// Tipo MIME custom per il drag & drop desktop delle task (evita di trattare testo/link trascinati da fuori come ID task)
+const TASK_DRAG_TYPE = 'application/x-zenith-task';
+
+// Escape dei contenuti utente inseriti tramite innerHTML
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function getActiveTasks() {
+    return state.tasksProjectId === state.activeProjectId ? state.tasks : [];
+}
 
 // Auth Selectors
 const authScreen = document.getElementById('auth-screen');
@@ -267,90 +287,135 @@ function setupSync() {
             ...d.data()
         }));
 
-        // Migrazione automatica: assegna 'order' ai progetti che non ce l'hanno
-        let needsReorder = false;
-        for (let i = 0; i < state.projects.length; i++) {
-            if (state.projects[i].order === undefined || state.projects[i].order === null) {
-                needsReorder = true;
-                const pRef = doc(db, "projects", state.projects[i].id);
-                await updateDoc(pRef, { order: i });
-                state.projects[i].order = i;
-            }
+        // Migrazione automatica: assegna 'order' ai progetti che non ce l'hanno (in un'unica scrittura batch)
+        const missingOrder = state.projects
+            .map((p, i) => ({ p, i }))
+            .filter(({ p }) => p.order === undefined || p.order === null);
+        if (missingOrder.length > 0) {
+            const batch = writeBatch(db);
+            missingOrder.forEach(({ p, i }) => {
+                batch.update(doc(db, "projects", p.id), { order: i });
+                p.order = i;
+            });
+            batch.commit().catch(e => console.error("Error migrating project order:", e));
         }
 
         // Ordinamento client-side per campo 'order'
         state.projects.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
 
-        renderProjects();
+        const activeProjectExists = state.projects.some(p => p.id === state.activeProjectId);
 
-        // Se ci sono progetti, gestiamo la selezione iniziale o aggiorniamo quella esistente
-        if (state.projects.length > 0) {
-            const activeProjectExists = state.projects.some(p => p.id === state.activeProjectId);
+        if (state.projects.length === 0) {
+            // Nessun progetto: resetta la UI
+            isInitialProjectsLoad = false;
+            renderProjects();
+            clearActiveProject();
+            return;
+        }
 
-            if (isInitialProjectsLoad) {
-                isInitialProjectsLoad = false;
+        if (isInitialProjectsLoad || !activeProjectExists) {
+            const wasInitial = isInitialProjectsLoad;
+            isInitialProjectsLoad = false;
 
-                if (state.startupMode === 'first' || !state.activeProjectId || !activeProjectExists) {
-                    // Modalità 'Primo' o selezione non valida: apri il primo progetto
-                    selectProject(state.projects[0].id);
-                } else {
-                    // Modalità 'Ultimo': apri quello esistente
-                    const activeProject = state.projects.find(p => p.id === state.activeProjectId);
-                    activeProjectName.innerText = activeProject.name;
-
-                    const isCompleted = !!activeProject.completed;
-                    addTaskBtn.disabled = isCompleted;
-                    if (mobileAddTaskBtn) mobileAddTaskBtn.disabled = isCompleted;
-                    updateCompleteBtnUI(isCompleted);
-
-                    syncTasks(state.activeProjectId);
-                }
-            } else if (state.activeProjectId && activeProjectExists) {
-                // Aggiornamento dati su progetto già attivo
-                const activeProject = state.projects.find(p => p.id === state.activeProjectId);
-                activeProjectName.innerText = activeProject.name;
-
-                const isCompleted = !!activeProject.completed;
-                addTaskBtn.disabled = isCompleted;
-                if (mobileAddTaskBtn) mobileAddTaskBtn.disabled = isCompleted;
-                updateCompleteBtnUI(isCompleted);
-
-                syncTasks(state.activeProjectId);
+            if ((wasInitial && state.startupMode === 'first') || !activeProjectExists) {
+                // Modalità 'Primo', selezione non valida o progetto attivo eliminato: apri il primo progetto attivo
+                const firstProject = state.projects.find(p => !p.completed) || state.projects[0];
+                selectProject(firstProject.id, { animate: wasInitial });
+                return;
             }
         }
+
+        renderProjects();
+        refreshActiveProjectUI();
+    }, (error) => {
+        console.error("Error syncing projects:", error);
     });
+}
+
+// Aggiorna intestazione e pulsanti in base al progetto attivo
+function refreshActiveProjectUI() {
+    const activeProject = state.projects.find(p => p.id === state.activeProjectId);
+    if (!activeProject) return;
+
+    activeProjectName.innerText = activeProject.name;
+
+    const isCompleted = !!activeProject.completed;
+    addTaskBtn.disabled = isCompleted;
+    if (mobileAddTaskBtn) mobileAddTaskBtn.disabled = isCompleted;
+    updateCompleteBtnUI(isCompleted);
+
+    // Sottoscrive le task solo se il progetto è cambiato (evita di ricreare il listener a ogni snapshot dei progetti)
+    syncTasks(activeProject.id);
+    // Ridisegna le task: lo stato "completato" del progetto cambia l'aspetto delle card
+    renderTasks();
+}
+
+// Reset della UI quando non c'è un progetto selezionabile
+function clearActiveProject() {
+    state.activeProjectId = null;
+    localStorage.removeItem('zenith_active_project');
+    if (tasksUnsubscribe) tasksUnsubscribe();
+    tasksUnsubscribe = null;
+    state.tasks = [];
+    state.tasksProjectId = null;
+
+    activeProjectName.innerText = '';
+    addTaskBtn.disabled = true;
+    if (mobileAddTaskBtn) mobileAddTaskBtn.disabled = true;
+    [completeActiveProjectBtn, mobileCompleteProjectBtn].forEach(btn => { if (btn) btn.style.display = 'none'; });
+    const editBtn = document.getElementById('edit-active-project-btn');
+    if (editBtn) editBtn.style.display = 'none';
+
+    todoList.innerHTML = '';
+    inProgressList.innerHTML = '';
+    completedList.innerHTML = '';
+    todoCount.innerText = '0';
+    inProgressCount.innerText = '0';
+    completedCount.innerText = '0';
 }
 
 let tasksUnsubscribe = null;
 
 function syncTasks(projectId) {
     if (!db) return;
+    // Già sottoscritto a questo progetto: nulla da fare
+    if (tasksUnsubscribe && state.tasksProjectId === projectId) return;
     if (tasksUnsubscribe) tasksUnsubscribe();
 
+    state.tasksProjectId = projectId;
+    state.tasks = [];
+    renderTasks();
+
     const tasksCol = collection(db, `projects/${projectId}/tasks`);
-    tasksUnsubscribe = onSnapshot(tasksCol, async (snapshot) => {
+    tasksUnsubscribe = onSnapshot(tasksCol, (snapshot) => {
+        // Ignora snapshot arrivati dopo un cambio progetto
+        if (state.tasksProjectId !== projectId) return;
+
         const tasks = snapshot.docs.map(d => ({
             id: d.id,
             ...d.data()
         }));
 
         // Migrazione: assegna 'order' alle task che non ce l'hanno
-        for (let i = 0; i < tasks.length; i++) {
-            if (tasks[i].order === undefined || tasks[i].order === null) {
-                const tRef = doc(db, `projects/${projectId}/tasks`, tasks[i].id);
-                await updateDoc(tRef, { order: i });
-                tasks[i].order = i;
-            }
+        const missingOrder = tasks.filter(t => t.order === undefined || t.order === null);
+        if (missingOrder.length > 0) {
+            const batch = writeBatch(db);
+            tasks.forEach((t, i) => {
+                if (t.order === undefined || t.order === null) {
+                    batch.update(doc(db, `projects/${projectId}/tasks`, t.id), { order: i });
+                    t.order = i;
+                }
+            });
+            batch.commit().catch(e => console.error("Error migrating task order:", e));
         }
 
         // Ordinamento per campo 'order'
         tasks.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
 
-        const project = state.projects.find(p => p.id === projectId);
-        if (project) {
-            project.tasks = tasks;
-            renderTasks();
-        }
+        state.tasks = tasks;
+        renderTasks();
+    }, (error) => {
+        console.error("Error syncing tasks:", error);
     });
 }
 
@@ -399,11 +464,15 @@ function createProjectLi(project, index, isCompleted) {
         </div>
         <div class="project-priority ${priorityClass}">${priorityDisplay}</div>
         <div class="project-link">
-            <span>${project.name}</span>
+            <span>${escapeHtml(project.name)}</span>
         </div>
     `;
 
-    li.querySelector('.project-link').addEventListener('click', () => selectProject(project.id));
+    li.querySelector('.project-link').addEventListener('click', () => {
+        // Evita la selezione accidentale subito dopo un riordino touch
+        if (Date.now() - lastProjectTouchDragEnd < 400) return;
+        selectProject(project.id);
+    });
 
     if (!isCompleted) {
         // Desktop drag events
@@ -413,6 +482,8 @@ function createProjectLi(project, index, isCompleted) {
         });
         li.addEventListener('dragend', () => li.classList.remove('project-dragging'));
         li.addEventListener('dragover', (e) => {
+            // Mostra l'indicatore solo quando si trascina un progetto
+            if (!e.dataTransfer.types.includes('project/id')) return;
             e.preventDefault();
             const rect = li.getBoundingClientRect();
             const midY = rect.top + rect.height / 2;
@@ -439,7 +510,13 @@ function createProjectLi(project, index, isCompleted) {
 }
 
 // Touch drag and drop per progetti
-let projectTouchState = { active: false, projectId: null, clone: null, timer: null };
+let projectTouchState = { active: false, projectId: null, clone: null, timer: null, startX: 0, startY: 0 };
+let lastProjectTouchDragEnd = 0;
+
+// Solo i progetti attivi (non archiviati e non il clone) sono destinazioni valide
+function getProjectDropTargets() {
+    return document.querySelectorAll('#projects-list .project-item');
+}
 
 function setupProjectTouchDrag(handle, li, project, index) {
     li.addEventListener('touchstart', (e) => {
@@ -455,6 +532,8 @@ function setupProjectTouchDrag(handle, li, project, index) {
         projectTouchState.clone = null;
 
         const touch = e.touches[0];
+        projectTouchState.startX = touch.clientX;
+        projectTouchState.startY = touch.clientY;
         const isHandle = e.target.closest('.project-drag-handle');
         const delay = isHandle ? 50 : 500;
 
@@ -484,11 +563,15 @@ function setupProjectTouchDrag(handle, li, project, index) {
         clearTimeout(projectTouchState.timer);
         if (!projectTouchState.active) return;
 
+        // Evita che il rilascio generi anche un click (selezione progetto)
+        if (e.cancelable) e.preventDefault();
+        lastProjectTouchDragEnd = Date.now();
+
         const touch = e.changedTouches ? e.changedTouches[0] : e;
         let targetId = null;
         let insertBefore = true;
 
-        document.querySelectorAll('.project-item').forEach(item => {
+        getProjectDropTargets().forEach(item => {
             item.classList.remove('drag-insert-above', 'drag-insert-below');
             if (item.dataset.id === projectTouchState.projectId) return;
 
@@ -500,13 +583,15 @@ function setupProjectTouchDrag(handle, li, project, index) {
             }
         });
 
-        if (targetId && projectTouchState.projectId) {
-            await reorderProjects(projectTouchState.projectId, targetId, insertBefore);
-        }
+        const draggedId = projectTouchState.projectId;
 
         if (projectTouchState.clone) projectTouchState.clone.remove();
         li.classList.remove('project-dragging');
-        projectTouchState = { active: false, projectId: null, clone: null, timer: null };
+        projectTouchState = { active: false, projectId: null, clone: null, timer: null, startX: 0, startY: 0 };
+
+        if (targetId && draggedId) {
+            await reorderProjects(draggedId, targetId, insertBefore);
+        }
     };
 
     li.addEventListener('touchend', endTouch);
@@ -515,11 +600,19 @@ function setupProjectTouchDrag(handle, li, project, index) {
         document.querySelectorAll('.project-item').forEach(item => item.classList.remove('drag-insert-above', 'drag-insert-below'));
         if (projectTouchState.clone) projectTouchState.clone.remove();
         li.classList.remove('project-dragging');
-        projectTouchState = { active: false, projectId: null, clone: null, timer: null };
+        projectTouchState = { active: false, projectId: null, clone: null, timer: null, startX: 0, startY: 0 };
     });
 
-    handle.addEventListener('touchmove', (e) => {
-        if (!projectTouchState.active) return;
+    // Listener su tutto l'elemento: il drag può partire anche con long-press fuori dalla maniglia
+    li.addEventListener('touchmove', (e) => {
+        if (!projectTouchState.active) {
+            // Se l'utente sta scorrendo la lista prima dell'attivazione, annulla il long-press
+            const touch = e.touches[0];
+            const dx = Math.abs(touch.clientX - projectTouchState.startX);
+            const dy = Math.abs(touch.clientY - projectTouchState.startY);
+            if (dx > 10 || dy > 10) clearTimeout(projectTouchState.timer);
+            return;
+        }
         e.preventDefault();
         const touch = e.touches[0];
 
@@ -528,7 +621,7 @@ function setupProjectTouchDrag(handle, li, project, index) {
         }
 
         // Evidenzia linea di inserimento per progetti
-        document.querySelectorAll('.project-item').forEach(item => {
+        getProjectDropTargets().forEach(item => {
             item.classList.remove('drag-insert-above', 'drag-insert-below');
             if (item.dataset.id === projectTouchState.projectId) return;
 
@@ -549,24 +642,31 @@ async function reorderProjects(draggedId, targetId, insertBefore = true) {
     if (!db) return;
 
     const draggedIndex = state.projects.findIndex(p => p.id === draggedId);
+    if (draggedIndex === -1) return;
     const newProjects = [...state.projects];
     const [draggedProject] = newProjects.splice(draggedIndex, 1);
 
     // Ricalcola il target index sul nuovo array senza il draggedProject
     const newTargetIndex = newProjects.findIndex(p => p.id === targetId);
+    if (newTargetIndex === -1) return;
     const insertIndex = insertBefore ? newTargetIndex : newTargetIndex + 1;
 
     newProjects.splice(insertIndex, 0, draggedProject);
 
-    // Update orders in Firebase
-    for (let i = 0; i < newProjects.length; i++) {
-        const pRef = doc(db, "projects", newProjects[i].id);
-        await updateDoc(pRef, { order: i });
+    // Update orders in Firebase (scrittura atomica: un solo snapshot, niente stati intermedi)
+    try {
+        const batch = writeBatch(db);
+        newProjects.forEach((p, i) => {
+            if (p.order !== i) batch.update(doc(db, "projects", p.id), { order: i });
+        });
+        await batch.commit();
+    } catch (e) {
+        console.error("Error reordering projects:", e);
     }
 }
 
 // Select a Project
-function selectProject(id) {
+function selectProject(id, { animate = true } = {}) {
     state.activeProjectId = id;
     localStorage.setItem('zenith_active_project', id);
     const project = state.projects.find(p => p.id === id);
@@ -580,22 +680,23 @@ function selectProject(id) {
         addTaskBtn.disabled = isCompleted;
         if (mobileAddTaskBtn) mobileAddTaskBtn.disabled = isCompleted;
 
+        // Sottoscrivi subito le task del nuovo progetto (svuota la board del progetto precedente)
+        syncTasks(id);
+
         // Chiudi sidebar su mobile IMMEDIATAMENTE per evitare overlap grafici
         if (window.innerWidth <= 768) {
             closeSidebar();
-            // Piccola attesa per lasciare che la sidebar inizi a chiudersi prima di iniettare nuove task
+            // Piccola attesa per lasciare che la sidebar inizi a chiudersi prima di ridisegnare la lista
             // Questo previene il "salto" grafico o la sidebar che rimane incastrata
             setTimeout(() => {
                 renderProjects();
-                syncTasks(id);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             }, 100);
         } else {
             renderProjects();
-            syncTasks(id);
         }
 
-        gsap.fromTo('.column',
+        if (animate && window.gsap) gsap.fromTo('.column',
             { y: 20, opacity: 0 },
             {
                 y: 0,
@@ -612,7 +713,8 @@ function selectProject(id) {
 // Render Tasks lists
 function renderTasks() {
     const project = state.projects.find(p => p.id === state.activeProjectId);
-    if (!project || !project.tasks) return;
+    if (!project) return;
+    const tasks = getActiveTasks();
 
     // Cattura lo stato attuale per l'animazione FLIP
     const flipState = window.Flip ? Flip.getState(".task-card") : null;
@@ -623,7 +725,8 @@ function renderTasks() {
 
     let counts = { todo: 0, 'in-progress': 0, completed: 0 };
 
-    project.tasks.forEach(task => {
+    tasks.forEach(task => {
+        if (!(task.status in counts)) return; // Stato sconosciuto: ignora
         counts[task.status]++;
         const taskEl = createTaskElement(task, counts[task.status]);
 
@@ -669,9 +772,9 @@ function createTaskElement(task, priority) {
         <div class="task-content-wrapper">
             <div class="task-header">
                 <span class="task-priority">${priority}</span>
-                <h4>${task.title}</h4>
+                <h4>${escapeHtml(task.title)}</h4>
             </div>
-            ${task.description ? `<p>${task.description}</p>` : ''}
+            ${task.description ? `<p>${escapeHtml(task.description)}</p>` : ''}
             <div class="task-actions" style="${isProjectCompleted ? 'display:none' : ''}">
                 ${task.status !== 'todo' ? `<button class="task-move-btn move-prev" title="Sposta indietro"><i data-lucide="chevron-left"></i></button>` : ''}
                 ${task.status !== 'completed' ? `<button class="task-move-btn move-next" title="Sposta avanti"><i data-lucide="chevron-right"></i></button>` : ''}
@@ -682,8 +785,8 @@ function createTaskElement(task, priority) {
             <div class="task-checklist-preview">
                 ${task.checklist.map((item, idx) => `
                     <div class="preview-item ${item.completed ? 'completed' : ''}">
-                        <input type="checkbox" ${item.completed ? 'checked' : ''} data-task-id="${task.id}" data-idx="${idx}" class="task-card-checkbox">
-                        <span>${item.text}</span>
+                        <input type="checkbox" ${item.completed ? 'checked' : ''} ${isProjectCompleted ? 'disabled' : ''} data-task-id="${task.id}" data-idx="${idx}" class="task-card-checkbox">
+                        <span>${escapeHtml(item.text)}</span>
                     </div>
                 `).join('')}
             </div>
@@ -698,15 +801,18 @@ function createTaskElement(task, priority) {
     // Desktop drag events
     div.addEventListener('dragstart', (e) => {
         div.classList.add('dragging');
-        e.dataTransfer.setData('text/plain', task.id);
+        e.dataTransfer.setData(TASK_DRAG_TYPE, task.id);
+        e.dataTransfer.effectAllowed = 'move';
     });
 
     div.addEventListener('dragend', () => {
         div.classList.remove('dragging');
+        clearDragIndicators();
     });
 
     // Riordino task tramite drop su altra task
     div.addEventListener('dragover', (e) => {
+        if (!e.dataTransfer.types.includes(TASK_DRAG_TYPE)) return;
         e.preventDefault();
         e.stopPropagation();
 
@@ -738,12 +844,10 @@ function createTaskElement(task, priority) {
         const midY = rect.top + rect.height / 2;
         const insertBefore = e.clientY < midY;
 
-        div.classList.remove('drag-insert-above', 'drag-insert-below');
-        document.querySelectorAll('.drag-insert-above, .drag-insert-below').forEach(el => {
-            el.classList.remove('drag-insert-above', 'drag-insert-below');
-        });
+        // Lo stopPropagation impedisce alla colonna di ricevere il drop: puliamo qui anche il suo highlight
+        clearDragIndicators();
 
-        const draggedId = e.dataTransfer.getData('text/plain');
+        const draggedId = e.dataTransfer.getData(TASK_DRAG_TYPE);
         if (draggedId && draggedId !== task.id && db) {
             await reorderTasks(draggedId, task.id, task.status, insertBefore);
         }
@@ -762,12 +866,19 @@ function createTaskElement(task, priority) {
     div.querySelectorAll('.task-card-checkbox').forEach(chk => {
         chk.addEventListener('click', async (e) => {
             e.stopPropagation(); // Evita drag o altre azioni
-            const idx = parseInt(chk.dataset.idx);
-            const updatedChecklist = [...(task.checklist || [])];
-            updatedChecklist[idx].completed = chk.checked;
+            const idx = parseInt(chk.dataset.idx, 10);
+            // Copia profonda: non mutare lo stato locale prima della conferma del server
+            const updatedChecklist = (task.checklist || []).map((item, i) =>
+                i === idx ? { ...item, completed: chk.checked } : { ...item }
+            );
 
-            const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, task.id);
-            await updateDoc(taskRef, { checklist: updatedChecklist });
+            try {
+                const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, task.id);
+                await updateDoc(taskRef, { checklist: updatedChecklist });
+            } catch (err) {
+                console.error("Error updating checklist:", err);
+                chk.checked = !chk.checked; // ripristina lo stato visivo
+            }
         });
     });
 
@@ -782,59 +893,91 @@ function createTaskElement(task, priority) {
 // Riordinamento task nella stessa colonna
 async function reorderTasks(draggedId, targetId, newStatus, insertBefore = true) {
     if (!db) return;
-    const project = state.projects.find(p => p.id === state.activeProjectId);
-    if (!project || !project.tasks) return;
-
-    const draggedTask = project.tasks.find(t => t.id === draggedId);
-
-    // Se cambia colonna, aggiorna lo status
-    if (draggedTask.status !== newStatus) {
-        const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, draggedId);
-        await updateDoc(taskRef, { status: newStatus });
-    }
+    const tasks = getActiveTasks();
+    const draggedTask = tasks.find(t => t.id === draggedId);
+    if (!draggedTask || !newStatus) return;
 
     // Riordina nella colonna di destinazione
-    const columnTasks = project.tasks.filter(t => t.status === newStatus && t.id !== draggedId);
+    const columnTasks = tasks.filter(t => t.status === newStatus && t.id !== draggedId);
     const targetIndex = columnTasks.findIndex(t => t.id === targetId);
-    const insertIndex = insertBefore ? targetIndex : targetIndex + 1;
+    const insertIndex = targetIndex === -1 ? columnTasks.length : (insertBefore ? targetIndex : targetIndex + 1);
     columnTasks.splice(insertIndex, 0, { ...draggedTask, status: newStatus });
 
-    // Aggiorna ordini su Firebase
-    for (let i = 0; i < columnTasks.length; i++) {
-        const tRef = doc(db, `projects/${state.activeProjectId}/tasks`, columnTasks[i].id);
-        await updateDoc(tRef, { order: i });
+    // Status + ordini in un'unica scrittura atomica (evita render intermedi e ordini incoerenti)
+    try {
+        const batch = writeBatch(db);
+        columnTasks.forEach((t, i) => {
+            const tRef = doc(db, `projects/${state.activeProjectId}/tasks`, t.id);
+            if (t.id === draggedId) {
+                batch.update(tRef, { status: newStatus, order: i });
+            } else if (t.order !== i) {
+                batch.update(tRef, { order: i });
+            }
+        });
+        await batch.commit();
+    } catch (e) {
+        console.error("Error reordering tasks:", e);
     }
 }
 
+// Sposta una task alla fine di una colonna
+async function moveTaskToColumnEnd(taskId, newStatus) {
+    if (!db) return;
+    const tasks = getActiveTasks();
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || !newStatus) return;
+
+    const destTasks = tasks.filter(t => t.status === newStatus && t.id !== taskId);
+    const maxOrder = destTasks.reduce((max, t) => Math.max(max, t.order ?? -1), -1);
+    try {
+        const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, taskId);
+        await updateDoc(taskRef, { status: newStatus, order: maxOrder + 1 });
+    } catch (e) {
+        console.error("Error moving task:", e);
+    }
+}
+
+function clearDragIndicators() {
+    document.querySelectorAll('.drag-insert-above, .drag-insert-below').forEach(el => {
+        el.classList.remove('drag-insert-above', 'drag-insert-below');
+    });
+    document.querySelectorAll('.column.drag-over').forEach(col => col.classList.remove('drag-over'));
+}
+
 // Add Drop listeners to columns (Desktop)
+let dragAndDropInitialized = false;
+
 function setupDragAndDrop() {
+    // Evita listener duplicati se l'utente cambia più volte stato di autenticazione
+    if (dragAndDropInitialized) return;
+    dragAndDropInitialized = true;
+
     const columns = document.querySelectorAll('.column');
 
     columns.forEach(column => {
         column.addEventListener('dragover', (e) => {
+            if (!e.dataTransfer.types.includes(TASK_DRAG_TYPE)) return;
             e.preventDefault();
             column.classList.add('drag-over');
         });
 
-        column.addEventListener('dragleave', () => {
+        column.addEventListener('dragleave', (e) => {
+            // Ignora il passaggio sopra gli elementi figli della colonna (evita lo sfarfallio dell'highlight)
+            if (e.relatedTarget && column.contains(e.relatedTarget)) return;
             column.classList.remove('drag-over');
         });
 
         column.addEventListener('drop', async (e) => {
             e.preventDefault();
-            column.classList.remove('drag-over');
+            clearDragIndicators();
 
-            const taskId = e.dataTransfer.getData('text/plain');
+            const taskId = e.dataTransfer.getData(TASK_DRAG_TYPE);
             const newStatus = column.dataset.status;
+            const task = getActiveTasks().find(t => t.id === taskId);
 
-            if (taskId && newStatus && db) {
-                // Assegna l'ordine alla fine della colonna
-                const project = state.projects.find(p => p.id === state.activeProjectId);
-                const columnTasks = project?.tasks?.filter(t => t.status === newStatus) || [];
-                const newOrder = columnTasks.length;
-
-                const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, taskId);
-                await updateDoc(taskRef, { status: newStatus, order: newOrder });
+            // Rilascio nella stessa colonna su spazio vuoto: nessuna modifica
+            if (task && newStatus && task.status !== newStatus) {
+                await moveTaskToColumnEnd(taskId, newStatus);
             }
         });
     });
@@ -852,8 +995,8 @@ let touchDragState = {
 
 function setupTouchDragOnCard(div, task) {
     div.addEventListener('touchstart', (e) => {
-        // Se si tocca un pulsante, non attivare il drag
-        if (e.target.closest('button')) return;
+        // Se si tocca un pulsante o una checkbox, non attivare il drag
+        if (e.target.closest('button, input')) return;
 
         // --- FIX: Pulisci SEMPRE eventuali residui di drag precedenti ---
         if (touchDragState.timer) clearTimeout(touchDragState.timer);
@@ -944,6 +1087,7 @@ function setupTouchDragOnCard(div, task) {
     div.addEventListener('touchend', async (e) => {
         clearTimeout(touchDragState.timer);
         if (!touchDragState.active) return;
+        if (e.cancelable) e.preventDefault(); // nessun click "fantasma" dopo il rilascio
 
         const touch = e.changedTouches[0];
 
@@ -966,46 +1110,42 @@ function setupTouchDragOnCard(div, task) {
             }
         });
 
-        // Pulisci colonne
-        document.querySelectorAll('.column').forEach(col => col.classList.remove('drag-over'));
-
-        if (targetTaskId && touchDragState.taskId && db) {
-            // Rilasciato su una task specifica → riordina
-            await reorderTasks(touchDragState.taskId, targetTaskId, targetStatus, insertBefore);
-        } else {
-            // Rilasciato su una colonna vuota → sposta alla fine
-            let targetColumn = null;
-            document.querySelectorAll('.column').forEach(col => {
-                const rect = col.getBoundingClientRect();
-                if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
-                    touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
-                    targetColumn = col;
-                }
-            });
-
-            if (targetColumn && touchDragState.taskId && db) {
-                const newStatus = targetColumn.dataset.status;
-                const project = state.projects.find(p => p.id === state.activeProjectId);
-                const draggedTask = project?.tasks?.find(t => t.id === touchDragState.taskId);
-
-                // Sposta alla fine solo se cambiamo colonna.
-                // Se rilasciamo nella stessa colonna senza colpire una task specifica, non facciamo nulla.
-                if (draggedTask && draggedTask.status !== newStatus) {
-                    const columnTasks = project?.tasks?.filter(t => t.status === newStatus) || [];
-                    const newOrder = columnTasks.length;
-
-                    const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, touchDragState.taskId);
-                    await updateDoc(taskRef, { status: newStatus, order: newOrder });
-                }
+        // Colonna sotto il punto di rilascio
+        let targetColumn = null;
+        document.querySelectorAll('.column').forEach(col => {
+            col.classList.remove('drag-over');
+            const rect = col.getBoundingClientRect();
+            if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
+                touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+                targetColumn = col;
             }
-        }
+        });
 
-        // Pulisci
+        const draggedId = touchDragState.taskId;
+
+        // Pulisci subito la UI del drag (non attendere la conferma del server)
         if (touchDragState.clone) touchDragState.clone.remove();
         div.classList.remove('dragging');
         touchDragState.active = false;
         touchDragState.taskId = null;
         touchDragState.clone = null;
+
+        if (!draggedId || !db) return;
+
+        if (targetTaskId) {
+            // Rilasciato su una task specifica → riordina
+            await reorderTasks(draggedId, targetTaskId, targetStatus, insertBefore);
+        } else if (targetColumn) {
+            // Rilasciato su una colonna vuota → sposta alla fine
+            const newStatus = targetColumn.dataset.status;
+            const draggedTask = getActiveTasks().find(t => t.id === draggedId);
+
+            // Sposta alla fine solo se cambiamo colonna.
+            // Se rilasciamo nella stessa colonna senza colpire una task specifica, non facciamo nulla.
+            if (draggedTask && draggedTask.status !== newStatus) {
+                await moveTaskToColumnEnd(draggedId, newStatus);
+            }
+        }
     });
 
     div.addEventListener('touchcancel', () => {
@@ -1025,8 +1165,8 @@ function setupTouchDragOnCard(div, task) {
 // Move Task logic with Firebase
 async function moveTask(taskId, direction) {
     if (!db) return;
-    const project = state.projects.find(p => p.id === state.activeProjectId);
-    const task = project.tasks.find(t => t.id === taskId);
+    const task = getActiveTasks().find(t => t.id === taskId);
+    if (!task) return;
     const statuses = ['todo', 'in-progress', 'completed'];
     const currentIndex = statuses.indexOf(task.status);
     let newStatus = task.status;
@@ -1039,11 +1179,7 @@ async function moveTask(taskId, direction) {
 
     if (newStatus !== task.status) {
         // Metti alla fine della nuova colonna
-        const project = state.projects.find(p => p.id === state.activeProjectId);
-        const destTasks = project?.tasks?.filter(t => t.status === newStatus) || [];
-        const newOrder = destTasks.length;
-        const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, taskId);
-        await updateDoc(taskRef, { status: newStatus, order: newOrder });
+        await moveTaskToColumnEnd(taskId, newStatus);
     }
 }
 
@@ -1051,19 +1187,10 @@ async function toggleProjectComplete(projectId, isCompleted) {
     if (!db) return;
     try {
         const projectRef = doc(db, "projects", projectId);
+        // La UI (pulsanti, card, lista) viene aggiornata dallo snapshot dei progetti
         await updateDoc(projectRef, { completed: isCompleted });
 
-        // Se stiamo modificando il progetto attivo, aggiorniamo la UI
         if (state.activeProjectId === projectId) {
-            addTaskBtn.disabled = isCompleted;
-            if (mobileAddTaskBtn) mobileAddTaskBtn.disabled = isCompleted;
-
-            // Abilita/Disabilita tasto di completamento mobile
-            if (completeActiveProjectBtn) completeActiveProjectBtn.disabled = isCompleted;
-            if (mobileCompleteProjectBtn) mobileCompleteProjectBtn.disabled = isCompleted;
-
-            updateCompleteBtnUI(isCompleted);
-
             // Trigger feedback visivo su mobile (cornice che si illumina)
             if (window.innerWidth <= 768 && screenFlashOverlay) {
                 screenFlashOverlay.classList.remove('animate');
@@ -1129,35 +1256,41 @@ if (mobileCompleteProjectBtn) mobileCompleteProjectBtn.addEventListener('click',
 async function deleteTask(taskId) {
     if (!db) return;
     if (confirm("Sei sicuro di voler eliminare questa task?")) {
-        const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, taskId);
-        await deleteDoc(taskRef);
+        try {
+            const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, taskId);
+            await deleteDoc(taskRef);
+        } catch (e) {
+            console.error("Error deleting task: ", e);
+        }
     }
 }
 
+// Restituisce true se il progetto è stato eliminato
 async function deleteProject(projectId) {
-    if (!db) return;
-    if (confirm("Sei sicuro di voler eliminare questo progetto e tutte le sue task? L'azione è irreversibile.")) {
-        try {
-            // Firestore non elimina automaticamente le sottocollezioni. 
-            // Per piccoli progetti come questo, recuperiamo le task e le eliminiamo.
-            const project = state.projects.find(p => p.id === projectId);
-
-            // Se il progetto ha task caricate nello stato locale (perché è quello attivo)
-            // le usiamo, altrimenti dovremmo fare una fetch (omessa per semplicità se non attivo)
-            // In un set reale, useremmo una Cloud Function o un batch delete.
-
-            // Eliminiamo il documento del progetto
-            const projectRef = doc(db, "projects", projectId);
-            await deleteDoc(projectRef);
-
-            if (state.activeProjectId === projectId) {
-                state.activeProjectId = null;
-                localStorage.removeItem('zenith_active_project');
-                location.reload(); // Semplice reload per resettare lo stato della UI
-            }
-        } catch (e) {
-            console.error("Error deleting project: ", e);
+    if (!db) return false;
+    if (!confirm("Sei sicuro di voler eliminare questo progetto e tutte le sue task? L'azione è irreversibile.")) {
+        return false;
+    }
+    try {
+        // Firestore non elimina automaticamente le sottocollezioni:
+        // eliminiamo prima le task (le regole di sicurezza delle task leggono il progetto padre),
+        // in batch da max 500 operazioni.
+        const tasksSnap = await getDocs(collection(db, `projects/${projectId}/tasks`));
+        const taskDocs = tasksSnap.docs;
+        for (let i = 0; i < taskDocs.length; i += 450) {
+            const batch = writeBatch(db);
+            taskDocs.slice(i, i + 450).forEach(d => batch.delete(d.ref));
+            await batch.commit();
         }
+
+        // Poi il documento del progetto.
+        // Se era quello attivo, lo snapshot dei progetti selezionerà automaticamente un altro progetto.
+        await deleteDoc(doc(db, "projects", projectId));
+        return true;
+    } catch (e) {
+        console.error("Error deleting project: ", e);
+        alert("Impossibile eliminare il progetto. Riprova.");
+        return false;
     }
 }
 
@@ -1197,40 +1330,58 @@ if (editActiveProjectBtn) {
 
 const deleteProjectBtnModal = document.getElementById('delete-project-btn-modal');
 if (deleteProjectBtnModal) {
-    deleteProjectBtnModal.addEventListener('click', () => {
+    deleteProjectBtnModal.addEventListener('click', async () => {
         const editId = projectEditId.value;
-        if (editId) {
-            deleteProject(editId);
+        if (!editId) return;
+        // Chiudi il modale solo se l'utente ha confermato l'eliminazione
+        if (await deleteProject(editId)) {
             projectModal.classList.remove('active');
         }
     });
 }
 
+let isSavingProject = false;
+
 saveProjectBtn.addEventListener('click', async () => {
     const name = projectNameInput.value.trim();
     const editId = projectEditId.value;
-    if (name && db) {
-        try {
-            if (editId) {
-                // Rinomina progetto esistente
-                const projectRef = doc(db, "projects", editId);
-                await updateDoc(projectRef, { name: name });
-            } else {
-                // Crea nuovo progetto
-                const docRef = await addDoc(collection(db, "projects"), {
-                    name: name,
-                    order: state.projects.length,
-                    userId: state.currentUser.uid,
-                    createdAt: serverTimestamp()
-                });
-                selectProject(docRef.id);
-            }
-            projectNameInput.value = '';
-            projectEditId.value = '';
-            projectModal.classList.remove('active');
-        } catch (e) {
-            console.error("Error saving project: ", e);
+    if (!name || !db || !state.currentUser || isSavingProject) return;
+
+    // Evita creazioni duplicate con doppio click
+    isSavingProject = true;
+    saveProjectBtn.disabled = true;
+    try {
+        if (editId) {
+            // Rinomina progetto esistente
+            const projectRef = doc(db, "projects", editId);
+            await updateDoc(projectRef, { name: name });
+        } else {
+            // Crea nuovo progetto in fondo alla lista
+            const maxOrder = state.projects.reduce((max, p) => Math.max(max, p.order ?? -1), -1);
+            const docRef = await addDoc(collection(db, "projects"), {
+                name: name,
+                order: maxOrder + 1,
+                userId: state.currentUser.uid,
+                createdAt: serverTimestamp()
+            });
+            selectProject(docRef.id);
         }
+        projectNameInput.value = '';
+        projectEditId.value = '';
+        projectModal.classList.remove('active');
+    } catch (e) {
+        console.error("Error saving project: ", e);
+        alert("Impossibile salvare il progetto. Riprova.");
+    } finally {
+        isSavingProject = false;
+        saveProjectBtn.disabled = false;
+    }
+});
+
+projectNameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) {
+        e.preventDefault();
+        saveProjectBtn.click();
     }
 });
 
@@ -1252,7 +1403,7 @@ function renderModalChecklist() {
         div.className = `checklist-item ${item.completed ? 'completed' : ''}`;
         div.innerHTML = `
             <input type="checkbox" ${item.completed ? 'checked' : ''}>
-            <span>${item.text}</span>
+            <span>${escapeHtml(item.text)}</span>
             <button class="icon-btn remove-item-btn" title="Rimuovi">
                 <i data-lucide="x"></i>
             </button>
@@ -1282,8 +1433,8 @@ addChecklistItemBtn.addEventListener('click', () => {
     }
 });
 
-newChecklistItemInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
+newChecklistItemInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) {
         e.preventDefault();
         addChecklistItemBtn.click();
     }
@@ -1318,28 +1469,58 @@ function openEditTaskModal(task) {
     setTimeout(() => taskTitleInput.focus(), 50);
 }
 
+let isSavingTask = false;
+
 saveTaskBtn.addEventListener('click', async () => {
     const title = taskTitleInput.value.trim();
     const desc = taskDescInput.value.trim();
     const editId = taskEditId.value;
-    const checklist = state.currentChecklist;
 
-    if (title && state.activeProjectId && db) {
-        try {
-            if (editId) {
-                const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, editId);
-                await updateDoc(taskRef, { title, description: desc, checklist: checklist });
-            } else {
-                const project = state.projects.find(p => p.id === state.activeProjectId);
-                const todoTasks = project?.tasks?.filter(t => t.status === 'todo') || [];
-                await addDoc(collection(db, `projects/${state.activeProjectId}/tasks`), {
-                    title, description: desc, status: 'todo',
-                    order: todoTasks.length, createdAt: serverTimestamp(),
-                    checklist: checklist
-                });
-            }
-            taskModal.classList.remove('active');
-        } catch (e) { console.error(e); }
+    // Include anche una voce di checklist scritta ma non ancora aggiunta con "+"
+    const pendingItem = newChecklistItemInput.value.trim();
+    if (pendingItem) {
+        state.currentChecklist.push({ text: pendingItem, completed: false });
+        newChecklistItemInput.value = '';
+        renderModalChecklist();
+    }
+    const checklist = state.currentChecklist.map(item => ({ ...item }));
+
+    if (!title) {
+        taskTitleInput.focus();
+        return;
+    }
+    if (!state.activeProjectId || !db || isSavingTask) return;
+
+    // Evita task duplicate con doppio click
+    isSavingTask = true;
+    saveTaskBtn.disabled = true;
+    try {
+        if (editId) {
+            const taskRef = doc(db, `projects/${state.activeProjectId}/tasks`, editId);
+            await updateDoc(taskRef, { title, description: desc, checklist: checklist });
+        } else {
+            const todoTasks = getActiveTasks().filter(t => t.status === 'todo');
+            const maxOrder = todoTasks.reduce((max, t) => Math.max(max, t.order ?? -1), -1);
+            await addDoc(collection(db, `projects/${state.activeProjectId}/tasks`), {
+                title, description: desc, status: 'todo',
+                order: maxOrder + 1, createdAt: serverTimestamp(),
+                checklist: checklist
+            });
+        }
+        taskModal.classList.remove('active');
+    } catch (e) {
+        console.error("Error saving task:", e);
+        alert("Impossibile salvare la task. Riprova.");
+    } finally {
+        isSavingTask = false;
+        saveTaskBtn.disabled = false;
+    }
+});
+
+taskTitleInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) {
+        e.preventDefault();
+        saveTaskBtn.click();
     }
 });
 // -----------------------
@@ -1366,21 +1547,6 @@ mobileMenuBtn.addEventListener('click', openSidebar);
 sidebarOverlay.addEventListener('click', closeSidebar);
 closeSidebarBtn.addEventListener('click', closeSidebar);
 
-// Migrazione dei progetti vecchi (senza owner) all'utente loggato.
-async function migrateLegacyProjects(userId) {
-    if (!db) return;
-    const qProjects = collection(db, "projects");
-    const snap = await getDocs(qProjects);
-
-    // Assegna il userId ai progetti che non ce l'hanno
-    for (const docSnap of snap.docs) {
-        const prod = docSnap.data();
-        if (!prod.userId) {
-            await updateDoc(doc(db, "projects", docSnap.id), { userId: userId });
-        }
-    }
-}
-
 // Mostra l'overlay di accesso sopra l'app e la rende non interattiva finché l'utente non è loggato
 function setAppLocked(locked) {
     authScreen.style.display = locked ? 'flex' : 'none';
@@ -1403,15 +1569,16 @@ if (auth) {
                 userAvatar.src = user.photoURL;
                 userAvatar.style.display = 'block';
                 settingsUserAvatar.src = user.photoURL;
+                settingsUserAvatar.style.display = '';
+            } else {
+                // Evita l'icona di immagine rotta con src vuoto
+                settingsUserAvatar.style.display = 'none';
             }
             settingsUserName.innerText = user.displayName || 'Utente Zenith';
             settingsUserEmail.innerText = user.email;
 
             const wasLocked = appScreen.inert;
             setAppLocked(false);
-
-            // Sync data
-            await migrateLegacyProjects(user.uid);
 
             // Carica preferenze utente da Firestore
             try {
@@ -1431,7 +1598,7 @@ if (auth) {
             initIcons();
 
             // Animazioni (solo se l'app è appena apparsa)
-            if (wasLocked) {
+            if (wasLocked && window.gsap) {
                 if (window.innerWidth > 768) {
                     gsap.from('.sidebar', { x: -50, opacity: 0, duration: 0.8, ease: 'power3.out' });
                 }
@@ -1443,6 +1610,10 @@ if (auth) {
             setAppLocked(true);
             if (projectsUnsubscribe) projectsUnsubscribe();
             if (tasksUnsubscribe) tasksUnsubscribe();
+            projectsUnsubscribe = null;
+            tasksUnsubscribe = null;
+            state.tasksProjectId = null;
+            state.tasks = [];
         }
     });
 
@@ -1466,6 +1637,10 @@ if (auth) {
 // Pulsante Login
 loginBtn.addEventListener('click', async () => {
     console.log("Login attempt initiated...");
+    if (!auth) {
+        alert("Firebase non è configurato: impossibile effettuare l'accesso.");
+        return;
+    }
 
     // Prova prima con il Popup anche su mobile, perché è più affidabile per catturare lo stato su iOS
     // Se Safari lo blocca, catturiamo l'errore e passiamo al redirect.
@@ -1474,22 +1649,29 @@ loginBtn.addEventListener('click', async () => {
         await signInWithPopup(auth, provider);
         // Il successo qui verrà gestito da onAuthStateChanged
     } catch (err) {
-        console.warn("Popup failed or blocked, trying redirect:", err.code);
-        if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request' ||
-            err.code === 'auth/popup-closed-by-user' || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        // Secondo click mentre un popup è già aperto: nessuna azione
+        if (err.code === 'auth/cancelled-popup-request') return;
+
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        // Su desktop, chiudere il popup significa annullare l'accesso (niente redirect forzato)
+        if (err.code === 'auth/popup-closed-by-user' && !isMobile) return;
+
+        if (err.code === 'auth/popup-blocked' || isMobile) {
+            console.warn("Popup failed or blocked, trying redirect:", err.code);
             try {
                 console.log("Starting redirect login as fallback...");
                 await signInWithRedirect(auth, provider);
             } catch (redirErr) {
                 alert("Errore avvio login (redirect): " + redirErr.message);
             }
-        } else if (err.code !== 'auth/cancelled-popup-request') {
+        } else {
             alert("Errore login: " + err.message);
         }
     }
 });
 
 logoutBtn.addEventListener('click', () => {
+    if (!auth) return;
     signOut(auth).then(() => {
         window.location.reload(); // Forza ricarica per pulire tutto
     }).catch(err => console.error("Logout error:", err));
@@ -1520,11 +1702,24 @@ startupBtns.forEach(btn => {
     btn.addEventListener('click', () => applyStartupMode(btn.dataset.startup));
 });
 
-// Chiudi modal cliccando fuori
-['click', 'touchstart'].forEach(evt => {
-    window.addEventListener(evt, (e) => {
-        if (e.target === settingsModal) settingsModal.classList.remove('active');
-        if (e.target === projectModal) projectModal.classList.remove('active');
-        if (e.target === taskModal) taskModal.classList.remove('active');
+// Chiudi modal cliccando fuori.
+// Si chiude solo se pressione E rilascio avvengono sullo sfondo: selezionare testo in un campo
+// e rilasciare il mouse fuori dal riquadro non deve chiudere il modale (e far perdere i dati inseriti).
+// pointerdown copre sia mouse che touch, quindi non serve un listener touchstart separato.
+let modalPointerDownTarget = null;
+window.addEventListener('pointerdown', (e) => {
+    modalPointerDownTarget = e.target;
+});
+window.addEventListener('click', (e) => {
+    const downTarget = modalPointerDownTarget;
+    modalPointerDownTarget = null;
+    [settingsModal, projectModal, taskModal].forEach(modal => {
+        if (e.target === modal && downTarget === modal) modal.classList.remove('active');
     });
+});
+
+// Chiudi il modale aperto con Esc
+window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    [settingsModal, projectModal, taskModal].forEach(modal => modal.classList.remove('active'));
 });

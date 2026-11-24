@@ -10,7 +10,7 @@ Benvenuto in **ZENITH**, la tua applicazione professionale per la gestione dei p
     - Nuova barra superiore compatta con accesso rapido alle funzioni di archiviazione.
     - Pulsanti flottanti (FAB) per l'aggiunta rapida di task.
     - Chiusura intelligente dei modali toccando/cliccando fuori dalla finestra.
-- **Ambiente Local-First**: Possibilità di testare l'app completamente offline tramite `local.html`.
+- **Demo locale**: Possibilità di testare l'app senza Firebase, con dati di prova, tramite `node dev/server.mjs`.
 
 ---
 
@@ -20,7 +20,7 @@ Il progetto segue ora una struttura pulita e modulare:
 - `src/js/`: Logica dell'applicazione (Firebase e versione Local).
 - `src/assets/`: Icone, loghi e risorse statiche.
 - `index.html`: Punto di ingresso principale (collegato a Firebase).
-- `local.html`: Versione per lo sviluppo locale senza necessità di configurazione cloud.
+- `dev/`: Server di sviluppo locale e mock di Firebase con dati di prova.
 
 ---
 
@@ -50,10 +50,16 @@ Per far funzionare il salvataggio dei dati nel cloud, segui questi passaggi:
 ---
 
 ## 🛠️ Sviluppo Locale (Mock DB)
-Se vuoi testare l'app istantaneamente senza configurare Firebase, apri semplicemente il file:
-`local.html`
+Per testare l'app senza Firebase, con progetti e task di prova:
 
-Questa versione utilizza `localStorage` per simulare un database persistente nel browser.
+```bash
+node dev/server.mjs            # http://localhost:8080
+PORT=5180 node dev/server.mjs  # porta personalizzata
+```
+
+Il server inietta in `index.html` un import map che sostituisce gli SDK Firebase con i mock in `dev/mock-firebase/`
+(login automatico come "Utente Demo", dati salvati in `localStorage`). Il codice dell'app non viene modificato.
+Apri `/?reset` (o clicca il badge "DEMO LOCALE") per ripristinare i dati di prova.
 
 ## Tecnologie
 - **Firebase Firestore**: Cloud Database Real-time.

@@ -10,12 +10,15 @@ service cloud.firestore {
     
     // Progetti
     match /projects/{projectId} {
-      // Un utente può accedere al progetto se è il proprietario (campo userId)
-      // Permettiamo il READ anche se il campo userId manca per supportare la migrazione legacy in main.js
-      allow read: if request.auth != null && (!('userId' in resource.data) || resource.data.userId == request.auth.uid);
-      
-      // Permettiamo update/delete solo se è il proprietario o se sta passando la migrazione
-      allow update, delete: if request.auth != null && (!('userId' in resource.data) || resource.data.userId == request.auth.uid);
+      // Solo il proprietario (campo userId) può leggere o eliminare il progetto.
+      // I progetti senza userId non sono accessibili a nessuno.
+      allow read, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+
+      // L'update deve lasciare l'utente corrente come proprietario: impedisce di
+      // "regalare" un progetto a un altro utente o di rimuovere il campo userId.
+      allow update: if request.auth != null
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid;
       
       // Permettiamo la creazione solo se l'utente assegna se stesso come proprietario
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;

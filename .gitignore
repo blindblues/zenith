@@ -3,3 +3,6 @@ node_modules/
 Thumbs.db
 local.html
 main-local.js
+.playwright-mcp/
+.firebase/
+firebase-debug.log
